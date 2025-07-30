@@ -119,7 +119,7 @@ def process_orientations(stacked_orientations):
 
     wsse = np.sum((f_data - model(bin_centers, U_fitted))**2
               * np.sin(bin_centers) * d_theta)
-    rmse_sphere = np.sqrt(wsse / (4 * np.pi))
+    rmse_sphere = np.sqrt(wsse / 2)
 
     print(f"Fitted U: {U_fitted:.3f}, RMSE: {rmse_sphere:.3f}, Nematic Order Parameter: {nematic_order_parameter:.3f}, Biaxiality: {biaxiality:.3f}")
 

@@ -1,16 +1,22 @@
 #!/bin/bash
 
 # # Define the parameters
-# aspectRatio=(1.0 1.2 1.5 1.8 2.0 2.5 3.0)
-# cofs=(0.0 0.4 1.0)
-# Is=(0.0316 0.01 0.00316 0.001 0.000316 0.0001)
-aspectRatio=(0.33 0.40 0.50 0.56 0.67 0.83)
-#aspectRatio=(0.83)
-cofs=(0.0 0.4 1.0)
-Is=(0.000316 0.0001)
+# aspectRatios=(1.0 1.2 1.5 1.8 2.0 2.5 3.0)
+cofs=(0.0 0.001 0.01 0.1 0.4 1.0 10.0)
+# # aspectRatios=(0.33 0.40 0.50 0.56 0.67 0.83)
+# # aspectRatios=(3.0)
+# # cofs=(0.0)
+# Is=(0.1 0.046 0.022 0.01 0.0046 0.0022 0.001)
 
+# aspectRatios=(0.33 0.4 0.5 0.56 0.67 0.83 1.0)
+aspectRatios=(6.0 8.0 10.0)
+# inertialNumbers=(0.001)
+# cofs=(0.0)
+Is=(0.1)
+s=50
 # Define the maximum number of parallel tasks
-max_parallel_tasks=30
+max_parallel_tasks=10
+cpus=8
 
 echo "Start of the loop"
 
@@ -18,8 +24,15 @@ echo "Start of the loop"
 for cof in "${cofs[@]}"
 do
     # Loop through the values of -var flag for ap
-    for ap in "${aspectRatio[@]}"
+    for ap in "${aspectRatios[@]}"
     do
+        # Determine value of s based on ap
+        if (( $(echo "$ap < 1" | bc -l) )); then
+            s=$(echo "scale=1; 50 * $ap" | bc -l)
+        fi
+
+        # Optional: Print to check
+        echo "cof=$cof, ap=$ap, s=$s"
         # Loop through the values of -var flag for phi
         for I in "${Is[@]}"
         do
@@ -28,11 +41,11 @@ do
 #!/bin/bash
 #SBATCH -n 1 #Request 1 task (core)
 #SBATCH --ntasks=1                      # Number of tasks (processes)
-#SBATCH --cpus-per-task=32              # Number of CPU cores per task
-#SBATCH -t 0-00:05 #Request runtime of 1 hour
+#SBATCH --cpus-per-task=$cpus              # Number of CPU cores per task
+#SBATCH -t 0-10:00 #Request runtime of 1 hour
 ##SBATCH -o output_post_%j.txt #redirect output to output_post_JOBID.txt
 ##SBATCH -e error_post_%j.txt #redirect errors to error_post_JOBID.txt
-python main_shear_les.py -c $cof -a $ap -v $I -s 50
+python main_orientations.py -c $cof -a $ap -v $I -s $s -np $cpus
 EOL
 
             # Limit the number of parallel tasks
