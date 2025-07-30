@@ -80,8 +80,11 @@ def process_orientations(stacked_orientations):
     Compute the nematic parameter  and the director
     Masure how far from axisymmetric the distribution of orientations is.
     """
+    N_strains = stacked_orientations.shape[0]
+    order_tensor = np.einsum('ij,ik->jk', stacked_orientations, stacked_orientations) / N_strains
+    S4 = np.einsum('ni,nj,nk,nl->ijkl', stacked_orientations, stacked_orientations,stacked_orientations, stacked_orientations) / N_strains
+    S4 -= np.einsum('ij, kl ->ijkl', np.eye(3), order_tensor) / 3  # Subtract isotropic part
 
-    order_tensor = np.einsum('ij,ik->jk', stacked_orientations, stacked_orientations) / stacked_orientations.shape[0]
     nematic_tensor = order_tensor - np.eye(3) / 3  # Subtract the isotropic part
     eigenvalues, eigenvectors = np.linalg.eig(nematic_tensor)
     sorted_indices = np.argsort(eigenvalues)[::-1]  # Sort in descending order
@@ -93,16 +96,12 @@ def process_orientations(stacked_orientations):
     nematic_order_parameter = 3/2*eigenvalues[0] 
     angles_with_director = np.arccos(np.abs(np.dot(stacked_orientations, director)))  # Fold into [0, π/2]
     # angles_with_director = raw_thetas  
-    print("Director: ", director, " nematic order parameter: ", nematic_order_parameter)
-    print("Eigenvalues of the nematic tensor: ", eigenvalues)
-    print("Eigenvectors of the nematic tensor: ", eigenvectors)
-    print("theta: ", theta_d) 
-    print("average angle with director differce from pi/2: ", np.pi/2-np.mean(angles_with_director))
-    
+  
     biaxiality = eigenvalues[1] - eigenvalues[2]  # Biaxiality parameter
-    n_bins = 10
+    n_bins = 100
     f_data, edges = compute_polar_pdf(angles_with_director, n_bins=n_bins)
     bin_centers = 0.5 * (edges[:-1] + edges[1:])  # θ_i
+    d_theta = edges[1] - edges[0]  # Δθ_i
 
     # 6) Fit only U, holding S fixed
     model = lambda thetas, U: fit_equilibrium_ODF(thetas, nematic_order_parameter, U)
@@ -111,16 +110,18 @@ def process_orientations(stacked_orientations):
     popt, popv = spo.curve_fit(model, bin_centers, f_data, p0=[initial_guess_U], method = 'lm', ftol = 1e-8, maxfev=10000)
     U_fitted = popt[0]
 
-    print("Director:", director)
-    print("Nematic order parameter S:", nematic_order_parameter)
-    print("Fitted U:", U_fitted)
-    print("Covariance of U:", popv)
-
     theta_fit = np.linspace(0, np.pi/2, 100)
     f_fit = fit_equilibrium_ODF(theta_fit, nematic_order_parameter, U_fitted)
 
-    residuals = np.sum((f_data - model(bin_centers, U_fitted))**2)
-    print("Residuals:", residuals)
+    # residuals = (f_data - model(bin_centers, U_fitted))**2 * np.sin(bin_centers) * d_theta
+    # # chi_squared = np.sum(residuals * sin_theta_factor) / len(bin_centers)  
+    # rmse = np.sqrt(residuals)/(2 * np.pi)
+
+    wsse = np.sum((f_data - model(bin_centers, U_fitted))**2
+              * np.sin(bin_centers) * d_theta)
+    rmse_sphere = np.sqrt(wsse / (4 * np.pi))
+
+    print(f"Fitted U: {U_fitted:.3f}, RMSE: {rmse_sphere:.3f}, Nematic Order Parameter: {nematic_order_parameter:.3f}, Biaxiality: {biaxiality:.3f}")
 
     plt.figure(figsize=(8, 5))
     plt.plot(bin_centers, f_data, 'o', markersize=4, label="Data (per solid angle)")
@@ -131,12 +132,13 @@ def process_orientations(stacked_orientations):
     plt.grid(alpha=0.3)
     plt.ylim(0, 1.1 * np.max(f_data))
     plt.legend()
-    plt.tight_layout()
-    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_orientation_ODF_fit.png')
+    # plt.tight_layout()
+    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
     plt.close()
+    
+    times, oacf, D_r, Pe, tau_r, A_infty  = measure_rotational_diffusion(stacked_orientations, 2000, shear_rate, n_starting_points=40, max_lag=None)
 
     # build a dictionary with the results
-    
     results = {}
     results['bin_centers'] = bin_centers
     results['f_data'] = f_data
@@ -147,8 +149,131 @@ def process_orientations(stacked_orientations):
     results['theta_d'] = theta_d
     results['eigenvalues'] = eigenvalues
     results['eigenvectors'] = eigenvectors
-
+    results['rmse_fit'] = rmse_sphere
+    results['times'] = times
+    results['oacf'] = oacf
+    results['D_r'] = D_r
+    results['Pe'] = Pe
+    results['tau_r'] = tau_r
+    results['A_infty'] = A_infty
+    results['shear_rate'] = shear_rate
+    results['S4'] = S4
+    results['nematic_tensor'] = nematic_tensor
     return results
+
+def S2_to_gamma(results, shear_rate, n_particles):
+
+    orientations = np.concatenate([result['directors'] for result in results])
+    n_frames = orientations.shape[0] // n_particles
+    orientations = orientations.reshape(n_frames, n_particles, 3)
+
+    Identity = np.eye(3)
+    order_tensor = np.einsum('ijk,ijl->ikl', orientations, orientations)/n_particles
+    order_tensor -= Identity[np.newaxis, :, ]/3
+
+    order_parameters = 3/2* np.max( np.linalg.eigvalsh(order_tensor), axis=1)  # Nematic order parameter S2
+
+    gammas = np.linspace(0, 30, n_frames)  
+
+    plt.figure(figsize=(4, 3))
+    plt.plot(gammas, order_parameters, label='S2')
+    plt.xlabel('Strain')
+    plt.ylabel('Nematic Order Parameter S2')
+    # plt.show()
+    plt.savefig(f"ap_{ap}_cof_{cof}_I_{param}_S2_vs_gamma.png", dpi=300, bbox_inches='tight')
+    return order_parameters, gammas
+
+
+def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, n_starting_points=10, max_lag=None):
+    """
+    Measure rotational diffusion coefficient D_r via autocorrelation of P2(u · u')
+    
+    Parameters:
+    - stacked_orientations: (n_frames * n_particles, 3) array of unit vectors
+    - n_particles: Number of particles
+    - shear_rate: known shear rate (used to compute time step)
+    - n_starting_points: number of evenly spaced starting time points to average over
+    - max_lag: maximum number of time lags (optional, default: all possible)
+    
+    Returns:
+    - times: array of times corresponding to lags
+    - C: autocorrelation array (averaged over particles and starting points)
+    """
+    delta_gamma = 1 / 100  # time step in shear units
+    delta_t = delta_gamma / shear_rate
+    
+    n_total = stacked_orientations.shape[0]
+    n_frames = n_total // n_particles
+
+    # Reshape to (n_frames, n_particles, 3)
+    orientations = stacked_orientations.reshape(n_frames, n_particles, 3)
+
+    if max_lag is None:
+        max_lag = n_frames // 2
+
+    # Choose starting indices evenly spaced
+    start_indices = np.linspace(0, n_frames - max_lag - 1, n_starting_points, dtype=int)
+
+    oacf = np.zeros(max_lag)
+    msad = np.zeros(max_lag)  # Mean square angular displacement
+    for start in start_indices:
+        u0 = orientations[start]  # shape (n_particles, 3)
+        for lag in range(max_lag):
+            u_t = orientations[start + lag]  # shape (n_particles, 3)
+            dot = np.einsum('ij,ij->i', u0, u_t)  # dot product u(0) · u(t) for all particles
+            oacf[lag] += (dot**2).mean()
+
+            delta_angle = np.arccos(np.clip(dot, -1.0, 1.0))  # Ensure valid input for arccos
+            msad[lag] += (delta_angle**2).mean()  # Mean square angular displacement
+
+    oacf /= len(start_indices)
+    msad /= len(start_indices)  # Average over starting points
+
+    times = np.arange(max_lag) * delta_t
+
+    def long_time_decay(t, A_infty, tau_r):
+        """
+        Model for the autocorrelation function: A_infty + oacf * exp(-t/tau_r)
+        """
+        return A_infty + (1 -A_infty) * np.exp(-t / tau_r)
+
+    def short_time_decay(t, D_r):
+        return 2* D_r * t
+
+    # perfomr the fit to exrtract A_infty and tau_r
+    initial_guess = [0, 1]  # Initial guess for A_infty and tau_r
+    try:
+        popt, _ = spo.curve_fit(long_time_decay, times, oacf, p0=initial_guess, maxfev=10000)
+        A_infty, tau_r = popt
+
+        popt_short, _ = spo.curve_fit(short_time_decay, times, msad , p0=[0.1], maxfev=10000)
+
+    except RuntimeError as e:
+        print(f"Fit failed: {e}")
+        A_infty, tau_r = 0, 1  # Default values if fit fails
+
+    D_r =(1 -A_infty) / (4 * tau_r)  # Rotational diffusion coefficient
+    Pe = shear_rate / D_r  # Peclet number
+
+    D_r_short =  popt_short[0] 
+    Pe_short = shear_rate / D_r_short  
+    plt.figure(figsize=(4, 3))
+    plt.plot(times, oacf, 'o', markersize=4, label='OACF of P2(u · u\')')
+    plt.plot(times, long_time_decay(times, A_infty, tau_r), '--', label=f'Fit: A_infty={A_infty:.2f}, tau_r={tau_r:.2f}')
+    # plt.plot(times, short_time_decay(times, popt_short[0]), '--', label=f'Short time fit: A={popt_short[0]:.2f}')
+    # plt.plot(times, msad, 'x', markersize=4, label='Mean square angular displacement')
+    plt.xlabel('$t$ [s]')
+    plt.ylabel('$ \\langle ( \\mathbf{{u}}(t) \\cdot \\mathbf{{u}}(0) )^2 \\rangle $') 
+    plt.legend()
+    plt.savefig(f"ap_{ap}_cof_{cof}_I_{param}_rotational_diffusion_fit.png", dpi= 300, bbox_inches='tight')
+    # plt.show()
+
+    return times, oacf, D_r, Pe, tau_r, A_infty
+
+def avg_log_likelihood(theta_data, f_fit):
+    f_vals = f_fit(theta_data)
+    f_vals[f_vals <= 0] = 1e-10  # Avoid log(0)
+    return np.mean(np.log(f_vals))
 
 def fit_equilibrium_ODF(measured_thetas, S, U):
     """
@@ -228,6 +353,9 @@ def process_results(results, bins_global=144, bins_local=10):
             # compute the average of the scalar values
             averages[key] = np.mean([result[key] for result in results], axis=0)
     
+
+    results =  process_orientations(distributions['directors'])
+
     # thetax_bins = np.linspace(-np.pi/2, np.pi/2, 100)
     # thetaz_bins = np.linspace(0, np.pi/2, 100)
 
@@ -279,8 +407,6 @@ def process_results(results, bins_global=144, bins_local=10):
     # ax.view_init(elev=30, azim=30)  # Adjust the view angle
     # plt.show()
     
-    results =  process_orientations(distributions['directors'])
-
     # distributions['thetax_particles'] = np.stack([result['thetax'] for result in results], axis=1)
     
     # # Compute the weighted average histograms
@@ -355,34 +481,38 @@ def compute_autocorrelation_function(property):
 
     return avg_autocorr
 
-def compute_rotational_diffusion(thetax, n_sim):
+def compute_stress_orientation(dictionary):
     """
-    Compute the rotational diffusion coefficient from the angular displacement.
-    
-    Parameters:
-        thetax (numpy.ndarray): A 2D array of shape (n_particles, n_strains) representing the angular displacement.
-        
-        Returns:
-            scalar value of the rotational diffusion coefficient measured as the best fit of the mean square angular displacement
-            thetax values are capped in the range [-pi/2, pi/2] therefore we adjust the
-            thetax if there is a jump of more than pi/2 by unwrapping the actual angulr value
+    Compute the stress from flow and steric interaction as DE theory
     """
-    n_particles, n_strains = thetax.shape
-    
-    # update thetax values if there is a jump of more than pi/2 in numpy efficient way
-    unwarpped_thetax = np.unwrap(thetax, period= np.pi, axis=1)
 
-    # Compute the mean square angular displacement
-    msd = np.mean(unwarpped_thetax**2, axis=0)
+    S2 = dictionary['nematic_tensor']
+    S4 = dictionary['S4']
+    phi = dictionary['phi']
+    U = dictionary['U_fitted']
+    shear_rate = dictionary['shear_rate']
+    pressure = dictionary['p_yy']  
 
-    # Fit the mean square angular displacement to a linear function
-    final_strain = 16
-    intial_strain = 4
-    total_strain = final_strain - intial_strain
-    strain = np.arange(n_strains)*total_strain/n_strains
-    fit = np.polyfit(strain, msd, 1)
-    # print("Angular diffusion coefficient: ", fit[0]/2)
+    correction_density = phi * (1- 3/4 * phi) / (1-phi)**2 
+    U_tilde = 3/4* U * correction_density  
+
+    # create the strain rate tensor from simple shear 
+    strain_rate_tensor = 1/2 * np.array([[0, shear_rate, 0],
+                                   [shear_rate, 0, 0],
+                                   [0, 0, 0]])
     
+    T1 = np.einsum('ijkl, kl->ij', S4, strain_rate_tensor)  # 2nd order tensor
+    T2 = np.einsum('ijkl, kl->ij', S4, S2)  
+    T3 = S2@S2
+
+    total_stress = 2*U_tilde* (T3 + phi*S2/3 - T2)  # DE theory stress tensor missing constant
+
+    const_fit = - pressure / total_stress[1, 1]
+
+    stress_tensor = const_fit * total_stress
+
+    return stress_tensor, const_fit
+                              
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description='Process granular simulation.')
@@ -431,7 +561,7 @@ if __name__ == "__main__":
         combined_processor = CombinedProcessor(to_process_vtk, to_process_dump, data_read.file_list_box, shear_rate, dt_hertz)
 
         if param >=0.01:
-            shear_one_index = 600
+            shear_one_index = 1000
         else:
             shear_one_index = 400
         print("Shear one index: ", shear_one_index)
@@ -452,38 +582,16 @@ if __name__ == "__main__":
         # final_strain = (combined_processor.n_sim-shear_one_index)/100
         # strain = np.linspace(0, final_strain, auto_corr_vel.size)
 
-        # #plot the autocorrelation function
-        # plt.figure()
-        # plt.loglog(strain, auto_corr_vel)
-        # plt.xlabel('$\\gamma$')
-        # plt.ylabel('$\\tilde{{C}}_{v}(\\gamma)$')
-        # plt.xlim([0.001, 0.1])
-        # plt.savefig('autocorrelation_vy_strain.png')
-        # plt.close()
 
-        # # plot spatial autocorrelation
-        # plt.figure()    
-        # plt.plot(averages["c_r_values"], averages["c_delta_vy"])
-        # plt.xlabel('$r$')
-        # plt.ylabel('$\\tilde{C}_{\\delta v_y}(r)$')
-        # plt.savefig('spatial_autocorrelation_vy.png')
-        # plt.close()
+        # Compute nematic parameter and show it is steady state
+        with multiprocessing.Pool(num_processes) as pool:
+            results_time = pool.map(combined_processor.process_single_step,
+                                [step for step in range(combined_processor.n_sim)])
 
-        # #plot the autocorrelation function omega
-        # plt.figure()
-        # plt.loglog(strain, auto_corr_omega)
-        # plt.xlabel('$\\gamma$')
-        # plt.ylabel('$\\tilde{{C}}_{\\omega}(\\gamma)$')
-        # plt.xlim([0.001, 0.1])
-        # plt.savefig('autocorrelation_omega_strain.png')
+        S2_over_time, strains = S2_to_gamma(results_time, shear_rate, 2000)
 
-        # #plot the spatial autocorrelation omega
-        # plt.figure()
-        # plt.plot(averages["c_r_values"], averages["c_delta_omega_z"])
-        # plt.xlabel('$r$')
-        # plt.ylabel('$\\tilde{C}_{\\delta \\omega}(r)$')
-        # plt.savefig('spatial_autocorrelation_omega.png')
-        # plt.close()
+        orientation_dict['S2_over_time'] = S2_over_time
+        orientation_dict['strains'] = strains
 
                    # Access the specific PDFs or histograms as needed
         # hist_global_normal_avg = hist_weigh_avg['global_normal_force_hist']
@@ -498,9 +606,10 @@ if __name__ == "__main__":
         # bins_global = np.linspace(-180, 180, num_bins_global+1)
         # bins_local = np.linspace(0, 90, num_bins_local+1)
 
-        # csvProcessor = ProcessorCsv(df_csv)
-        # csvProcessor.exclude_initial_strain_cycle(param)
-        # avgcsv = csvProcessor.get_averages(shear_rate)
+        csvProcessor = ProcessorCsv(df_csv)
+        csvProcessor.exclude_initial_strain_cycle(param)
+        avgCsv = csvProcessor.get_averages(shear_rate)
+        fluctuationsCsv = csvProcessor.get_fluctuations(avgCsv)
         # datProcessor = ProcessorDat(df_dat)
         # avgdat = datProcessor.compute_averages(shear_one_index/combined_processor.n_sim)
         # avgdat = datProcessor.compute_max_vx_diff(avgdat) 
@@ -526,8 +635,8 @@ if __name__ == "__main__":
         # total_average_dissipation_local = np.sum(hist_weigh_avg['power_dissipation_normal']+hist_weigh_avg['power_dissipation_tangential'])
         # ratio_computed_mu_I_dissipation = total_average_dissipation_local/averages['muI_dissipation']
         # averages['ratio_diss_measurement'] = ratio_computed_mu_I_dissipation
-        # averages = {**averages, **avgcsv, **avgdat, **pdfs, **hist_weigh_avg}
-        print(orientation_dict)
+        # averages = {**averages, **avgCsv, **avgdat, **pdfs, **hist_weigh_avg}
+        # print(orientation_dict)
 
         # print(f"Average stress measured from contacts {averages['stress_contacts']}")
         # print(f"Average kinetic stress {averages['kinetic_stress']}")
@@ -540,8 +649,12 @@ if __name__ == "__main__":
         # print("Shear stress normal", averages['shear_stress_normal'])
         # print("Shear stress tangential", averages['shear_stress_tangential'])
         #export the data with pickle
+        averages = {**avgCsv,   **orientation_dict, **fluctuationsCsv}
+        print("Averages keys: ", averages.keys())   
+        
+        stress_prediction = compute_stress_orientation(averages)
         exporter = DataExporter(ap, cof,I=param)
-        exporter.export_orientation_data(orientation_dict)
+        exporter.export_orientation_data(averages)
         # exporter.export_with_pickle(averages)
         
         # # print("Data exported: ", averages)
@@ -588,14 +701,14 @@ if __name__ == "__main__":
         # plotter.plot_histogram_ellipsoid(hist_local_normal_avg, bins_local, "Local force normal contact point",'$F_n [N] $')
         # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg, bins_local, "Local force tangential contact point",'$F_t [N] $')
 
-        # plotter.plot_histogram_ellipsoid(hist_local_normal_avg/(avgcsv['p_yy']*total_area), bins_local,
+        # plotter.plot_histogram_ellipsoid(hist_local_normal_avg/(avgCsv['p_yy']*total_area), bins_local,
         #                                   "Local force normal contact point normalized pressure",'$F_n/p A_p $')
-        # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg/(avgcsv['p_yy']*total_area), bins_local, 
+        # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg/(avgCsv['p_yy']*total_area), bins_local, 
         #                                  "Local force tangential contact point normalized pressure",'$F_t/p A_p$')
 
-        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']*hist_local_normal_avg/(avgcsv['p_yy']*total_area*area_adjustments_ellipsoid), bins_local,
+        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']*hist_local_normal_avg/(avgCsv['p_yy']*total_area*area_adjustments_ellipsoid), bins_local,
         #                                   "Average Local force normal contact point normalized pressure",'$|F_n|/p A_p $')
-        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']*hist_local_tangential_avg/(avgcsv['p_yy']*total_area*area_adjustments_ellipsoid), bins_local, 
+        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']*hist_local_tangential_avg/(avgCsv['p_yy']*total_area*area_adjustments_ellipsoid), bins_local, 
         #                                  "Average Local force tangential contact point normalized pressure",'$|F_t|/p A_p$')
 
         # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg/hist_local_normal_avg, bins_local, "Ratio tangential to normal force",'$F_t/F_N$')
@@ -612,7 +725,7 @@ if __name__ == "__main__":
         # plotter.plot_histogram_ellipsoid(power_normalized_area, bins_local, "Power dissipation total (area)",'$P_j A_p /P_{tot} A_j $')
 
         # ellipsoid_force_pdf = pdfs['contacts_hist_cont_point_local']*np.sqrt(hist_weigh_avg['local_normal_force_hist_cp']**2 + hist_weigh_avg['local_tangential_force_hist_cp']**2)
-        # plotter.plot_histogram_ellipsoid(ellipsoid_force_pdf/(avgcsv['p_yy']*total_area), bins_local, "Force density", '$\\langle F_j \\rangle / \\sigma_{yy} A_j$')
+        # plotter.plot_histogram_ellipsoid(ellipsoid_force_pdf/(avgCsv['p_yy']*total_area), bins_local, "Force density", '$\\langle F_j \\rangle / \\sigma_{yy} A_j$')
 
         # plt.ion()
 

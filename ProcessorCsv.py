@@ -31,6 +31,19 @@ class ProcessorCsv(DataProcessor):
         avg_dict['Dzz'] = self.compute_diffusion_coefficient("Z", shear_rate)
         return avg_dict
     
+    def get_fluctuations(self, avg_dict):
+        """
+        Compute the fluctuations of the data
+        """
+        df_filtered = self.df.drop(columns=['time', 'shear_strain', 'msdY'], errors='ignore')
+        fluctuation_dict = {}
+        for key in df_filtered.columns:
+            key_fluct = key + '_fluct'
+            fluctuation_dict[key_fluct] = np.std(df_filtered[key]) / avg_dict[key]
+        
+        return fluctuation_dict
+
+
     def compute_dissipation_mu_I_average(self, shear_rate, volume_particles):
         """
         Compute the dissipation rate mu_I
