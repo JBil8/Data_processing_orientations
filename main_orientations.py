@@ -19,6 +19,7 @@ from DataExporter import DataExporter
 from ProcessorCsv import ProcessorCsv
 from ProcessorDat import ProcessorDat
 from histogram_utils import*
+from scipy.stats import binned_statistic
 import scipy.optimize as spo
 import functools
 
@@ -102,9 +103,59 @@ def jeffrey_theoretical_velocity(shear_rate, ap, orientation):
     omega_jeffrey = vorticity_component + beta * straining_component 
     return omega_jeffrey
 
-def compute_jeffrey_screening(shear_rate, ap, orientations, omegas):
+def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
 
     omegas /= shear_rate
+
+    theta_angles = np.arctan2(orientations[:, 1], orientations[:, 0])  # angle with respect to flow direction in x-y plane 
+
+    # reduce the angle to the range [-pi/2, pi/2]
+    theta_angles = (theta_angles + np.pi/2) % np.pi - np.pi/2
+
+    # bin thetas and the corresponding omegas at discrete values
+
+    n_bins_theta = 15
+    bins_theta = np.linspace(-np.pi/2, np.pi/2, n_bins_theta + 1)
+    bin_centers = 0.5 * (bins_theta[:-1] + bins_theta[1:])
+    bins_theta = np.linspace(-np.pi/2, np.pi/2, n_bins_theta + 1)
+   
+    # 2. Extract the omega_z values
+    omega_z = omegas[:, 2]
+
+    # 3. Use binned_statistic to calculate mean, std, and count in one pass
+    #    We request three statistics for each bin.
+    mean_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='mean', bins=bins_theta)
+    std_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='std', bins=bins_theta)
+    count_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='count', bins=bins_theta)
+
+    # 4. Calculate the standard error of the mean, handling bins with zero counts
+    #    np.sqrt(count_stat) will produce a warning for zero counts, which is fine.
+    #    The division by zero will result in 'nan', which we handle next.
+    omega_std_per_bin = std_stat / np.sqrt(count_stat)
+
+    # 5. Clean up the results for empty bins (replace nan with 0)
+    omega_per_bin = np.nan_to_num(mean_stat, nan=0.0)
+    omega_std_per_bin = np.nan_to_num(omega_std_per_bin, nan=0.0)
+
+
+    beta = (ap**2 - 1) / (ap**2 + 1)
+    jeffrey_omega = -(1 - beta * np.cos(2 * (bin_centers))) / 2
+
+    # compute the screening factor AS THE RATIO Of the interpolate measured to jeffrey at the theta_d angle
+    interpolated_measured = np.interp(theta_d, bin_centers, omega_per_bin)
+    jeffrey_theta_d = -(1 - beta * np.cos(2 *theta_d )) / 2
+    ratio = interpolated_measured / jeffrey_theta_d if jeffrey_theta_d != 0 else 0
+
+    plt.figure(figsize=(4, 4))
+    plt.plot(bin_centers, omega_per_bin, 'o-', label='Simulated', markersize=4)
+    plt.plot(bin_centers, jeffrey_omega, '--', label='Jeffrey', color='red')
+    plt.axvline(x=theta_d, color='green', linestyle=':', label='Director angle, ratio = %.2f' % ratio)
+    plt.errorbar(bin_centers, omega_per_bin, yerr=omega_std_per_bin, fmt='o', color='blue', alpha=0.5, label='Std Error', markersize=4)
+    plt.xlabel(r'$\theta$ [rad]')
+    plt.ylabel(r'$\omega_z / \dot{\gamma}$')   
+    plt.legend()
+    plt.savefig('ap_' + str(ap) + 'mup_' + str(cof) + '_I_' + str(param) + '_jeffrey_comparison.png', bbox_inches='tight')
+    plt.close()
 
     omega_jeffrey = jeffrey_theoretical_velocity(shear_rate, ap, orientations)
     dot_prod = np.einsum('ni, ni -> n', omega_jeffrey, omegas)
@@ -118,9 +169,9 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas):
     #     print(f"Warning: Negative screening factor, setting to zero. {screening_factor}")
         # screening_factor = 0
 
-    return screening_factor
+    return screening_factor, bin_centers, omega_per_bin, omega_std_per_bin
 
-def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps, shear_rate, ap, n_blocks=50):
+def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps, shear_rate, ap, theta_d, n_blocks=1):
     """
     Performs block analysis on simulation data to find lambda and its error bar.
 
@@ -163,8 +214,7 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
         omegas_block_flat = omegas_block.reshape(-1, 3)
 
         # 3. Calculate lambda for this block
-        lambda_i = compute_jeffrey_screening(shear_rate, ap, orientations_block_flat, omegas_block_flat)
-        lambdas_per_block.append(lambda_i)
+        lambda_i, bins, omega_bins, std_omega_bins = compute_jeffrey_screening(shear_rate, ap, orientations_block_flat, omegas_block_flat, theta_d)
     
     # 4. Calculate the mean and standard error of the mean from the block values
     mean_lambda = np.mean(lambdas_per_block)
@@ -175,7 +225,7 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
     ave_omega = np.mean(omegas_flat, axis=0) / shear_rate
     # print(f"Mean omega: {ave_omega}, Mean lambda: {mean_lambda}, Error bar: {error_bar}")
 
-    return mean_lambda, error_bar, ave_omega
+    return mean_lambda, error_bar, ave_omega, bins, omega_bins, std_omega_bins
 
 def process_orientations(stacked_orientations):
     """
@@ -225,18 +275,18 @@ def process_orientations(stacked_orientations):
 
     # print(f"Fitted U: {U_fitted:.3f}, RMSE: {rmse_sphere:.3f}, Nematic Order Parameter: {nematic_order_parameter:.3f}, Biaxiality: {biaxiality:.3f}")
 
-    # plt.figure(figsize=(8, 5))
-    # plt.plot(bin_centers, f_data, 'o', markersize=4, label="Data (per solid angle)")
-    # plt.plot(theta_fit, f_fit, '--', label=f"Maier–Saupe fit (U={U_fitted:.3f})")
-    # plt.xlabel(r'$\theta$ [rad]')
-    # plt.ylabel(r'$f(\theta)$ (per unit solid angle)')
-    # plt.title('Orientation ODF and Maier–Saupe Fit')
-    # plt.grid(alpha=0.3)
-    # plt.ylim(0, 1.1 * np.max(f_data))
-    # plt.legend()
-    # # plt.tight_layout()
-    # plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
-    # plt.close()
+    plt.figure(figsize=(8, 5))
+    plt.plot(bin_centers, f_data, 'o', markersize=4, label="Data (per solid angle)")
+    plt.plot(theta_fit, f_fit, '--', label=f"Maier–Saupe fit (U={U_fitted:.3f})")
+    plt.xlabel(r'$\theta$ [rad]')
+    plt.ylabel(r'$f(\theta)$ (per unit solid angle)')
+    plt.title('Orientation ODF and Maier–Saupe Fit')
+    plt.grid(alpha=0.3)
+    plt.ylim(0, 1.1 * np.max(f_data))
+    plt.legend()
+    # plt.tight_layout()
+    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
+    plt.close()
     
     times, oacf, D_r, Pe, tau_r, A_infty  = measure_rotational_diffusion(stacked_orientations, 2000, shear_rate, n_starting_points=40, max_lag=None)
 
@@ -298,13 +348,6 @@ def S2_to_gamma(results, shear_rate, n_particles):
 
     gammas = np.linspace(0, 30, n_frames)  
 
-    # plt.figure(figsize=(4, 3))
-    # plt.plot(gammas[100:], angles_rad[100:], label='theta')
-    # plt.plot(gammas, order_parameters, label='S2')
-    # plt.xlabel('Strain')
-    # plt.ylabel('Order')
-    # plt.show()
-    # plt.savefig(f"ap_{ap}_cof_{cof}_I_{param}_S2_vs_gamma.png", dpi=300, bbox_inches='tight')
     return order_parameters, gammas, angles_rad
 
 def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, n_starting_points=10, max_lag=None):
@@ -398,15 +441,34 @@ def avg_log_likelihood(theta_data, f_fit):
     f_vals[f_vals <= 0] = 1e-10  # Avoid log(0)
     return np.mean(np.log(f_vals))
 
+def P2(x):
+    """
+    Calculates the second Legendre polynomial, P₂(x) = (3x² - 1)/2.
+    """
+    return (3 * x**2 - 1) / 2
+
 def fit_equilibrium_ODF(measured_thetas, S, U):
     """
     Maier-Saupe equilibrium distribution per unit solid angle,
-    accounting for head-tail symmetry (θ ∈ [0, π/2]).
+    using the second Legendre Polynomial P₂(cosθ).
+    Accounts for head-tail symmetry (θ ∈ [0, π/2]).
     Normalization is computed over [0, π/2] and multiplied by 2 to account for symmetry.
     """
-    numerator = np.exp(S * U * np.cos(2 * measured_thetas))
+    # Calculate the cosine of the angles, which is the argument for P₂
+    cos_thetas = np.cos(measured_thetas)
+    
+    # The argument of the exponential is now based on the Legendre polynomial
+    legendre_term = P2(cos_thetas)
+    
+    # The numerator now uses the physically standard Maier-Saupe potential
+    # The potential is proportional to U * S * P₂(cosθ)
+    numerator = np.exp(S * U * legendre_term)
+    
+    # The normalization procedure remains identical, as it correctly integrates
+    # the un-normalized probability over the solid angle.
     integrand = numerator * np.sin(measured_thetas)
-    denominator =  4 * np.pi * np.trapezoid(integrand, x=measured_thetas)
+    denominator = 4 * np.pi * np.trapezoid(integrand, x=measured_thetas)
+    
     return numerator / denominator
 
 def compute_polar_pdf(theta_array, n_bins=50):
@@ -545,11 +607,14 @@ def process_results(results, bins_global=144, bins_local=10):
 
     results =  process_orientations(distributions['directors'])
     
-    screening_jeffrey, error_screening, ave_omega = perform_block_analysis(distributions['directors'], distributions['omegas'], 2000, n_sim, shear_rate, ap) 
+    screening_jeffrey, error_screening, ave_omega, bins, omega_bins, std_omega_bins = perform_block_analysis(distributions['directors'], distributions['omegas'], 2000, n_sim, shear_rate, ap, results['theta_d']) 
     
     results['screening_jeffrey'] = screening_jeffrey    
     results['error_screening'] = error_screening
     results['ave_omega'] = ave_omega
+    results['theta_bins'] = bins
+    results['omega_bins'] = omega_bins
+    results['std_omega_bins'] = std_omega_bins
 
     # thetax_bins = np.linspace(-np.pi/2, np.pi/2, 100)
     # thetaz_bins = np.linspace(0, np.pi/2, 100)
@@ -667,10 +732,7 @@ if __name__ == "__main__":
 
         global_path = "/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/"
         # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_dt_0.15/"
-        # global_path = "/work/lsms/jbilotto/simulations_simple_shear_hertz_dt_0.15/"
-        # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_dt_0.08/"
-        # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_cof_0.01/"
-        # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_vy_0.00001/"
+        # global_path = "/work/lsms/jbilotto/simulations_simple_shear_orientations/"
         
         plt.ioff()
          #initialize the vtk reader
@@ -700,19 +762,9 @@ if __name__ == "__main__":
             results = pool.map(combined_processor.process_single_step,
                                 [step for step in range(shear_one_index, combined_processor.n_sim)])
 
-        # num_bins_global = 144
-        # num_bins_local = 10
-        # area_adjustments_ellipsoid, total_area = area_adjustment_ellipsoid(num_bins_local, ap)
         # averages, hist_weigh_avg, pdfs, distributions = process_results(results, num_bins_global, num_bins_local)
         orientation_dict = process_results(results)
-        # D_rot = compute_rotational_diffusion(distributions['thetax_particles'], n_sim)
-        # auto_corr_vel = compute_autocorrelation_function(distributions['vy_velocity'])
-        # auto_corr_omega = compute_autocorrelation_function(distributions['omegaz_velocity'])
-
-        # final_strain = (combined_processor.n_sim-shear_one_index)/100
-        # strain = np.linspace(0, final_strain, auto_corr_vel.size)
-
-
+   
         # Compute nematic parameter and show it is steady state
         with multiprocessing.Pool(num_processes) as pool:
             results_time = pool.map(combined_processor.process_single_step,
@@ -724,61 +776,11 @@ if __name__ == "__main__":
         orientation_dict['strains'] = strains
         orientation_dict['angle_over_time'] = angle_over_time
 
-                   # Access the specific PDFs or histograms as needed
-        # hist_global_normal_avg = hist_weigh_avg['global_normal_force_hist']
-        # hist_global_tangential_avg = hist_weigh_avg['global_tangential_force_hist']
-        # hist_local_normal_avg = hist_weigh_avg['local_normal_force_hist_cp']
-        # hist_local_tangential_avg = hist_weigh_avg['local_tangential_force_hist_cp']
-        # hist_global_normal_cp_avg = hist_weigh_avg['global_normal_force_hist_cp']
-        # hist_global_tangential_cp_avg = hist_weigh_avg['global_tangential_force_hist_cp']
-
-        # # Define bins for plotting or further analysis
-        # bins_orientation = np.linspace(-np.pi/2, np.pi/2, 145)
-        # bins_global = np.linspace(-180, 180, num_bins_global+1)
-        # bins_local = np.linspace(0, 90, num_bins_local+1)
-
         csvProcessor = ProcessorCsv(df_csv)
         csvProcessor.exclude_initial_strain_cycle(param)
         avgCsv = csvProcessor.get_averages(shear_rate)
         fluctuationsCsv = csvProcessor.get_fluctuations(avgCsv)
-        # datProcessor = ProcessorDat(df_dat)
-        # avgdat = datProcessor.compute_averages(shear_one_index/combined_processor.n_sim)
-        # avgdat = datProcessor.compute_max_vx_diff(avgdat) 
-        # averages['muI_dissipation'] = csvProcessor.compute_dissipation_mu_I_average(shear_rate, particles_volume)
-        # n_bins_orientation = 180
-        # thetax_mean = compute_circular_mean(distributions['thetax'], n_bins_orientation)
-        # thetaz_mean = compute_circular_mean(distributions['thetaz'], n_bins_orientation)
-        # averages['thetax_mean'] = thetax_mean
-        # averages['thetaz_mean'] = thetaz_mean
-        # averages['shear_rate'] = shear_rate
-        # print("Shear rate: ", shear_rate)
-        # print("Measured shear rate: ", averages['measured_shear_rate'])
-        # averages['area_adjustment_ellipsoid'] = area_adjustments_ellipsoid
-        # averages['total_area'] = total_area
-        # averages['total_normal_dissipation'] = np.sum(hist_weigh_avg['power_dissipation_normal'])
-        # averages['total_tangential_dissipation'] = np.sum(hist_weigh_avg['power_dissipation_tangential'])
-        # averages['pdf_thetax'] = compute_pdf_orientation(distributions['thetax'], n_bins_orientation)
-        # averages['pdf_thetaz'] = compute_pdf_orientation(distributions['thetaz'], n_bins_orientation)
-        # averages['auto_corr_vel'] = auto_corr_vel[:100]
-        # averages['auto_corr_omega'] = auto_corr_omega[:100]
-        # averages['strain'] = strain[:100]
-        # averages['D_rot'] = D_rot
-        # total_average_dissipation_local = np.sum(hist_weigh_avg['power_dissipation_normal']+hist_weigh_avg['power_dissipation_tangential'])
-        # ratio_computed_mu_I_dissipation = total_average_dissipation_local/averages['muI_dissipation']
-        # averages['ratio_diss_measurement'] = ratio_computed_mu_I_dissipation
-        # averages = {**averages, **avgCsv, **avgdat, **pdfs, **hist_weigh_avg}
-        # print(orientation_dict)
-
-        # print(f"Average stress measured from contacts {averages['stress_contacts']}")
-        # print(f"Average kinetic stress {averages['kinetic_stress']}")
-        # print(f"Average stress measured from pressure {averages['p_yy'], averages['p_xy']}")
-        # print("Average dissipation contacts", averages['total_tangential_dissipation'] + averages['total_normal_dissipation'])
-        # print("Average dissipation global shear", averages['p_xy']* shear_rate* averages['box_x_length']*averages['box_y_length']*averages['box_z_length'])
-        # print("Average sliding dissipation", averages['total_tangential_dissipation'])
-        # print("Dissipation pressure global", averages['dissipation_pressure'][0, 1])
-        # print("Spatial autocorrelation vy", averages['c_delta_vy'])
-        # print("Shear stress normal", averages['shear_stress_normal'])
-        # print("Shear stress tangential", averages['shear_stress_tangential'])
+      
         #export the data with pickle
         averages = {**avgCsv,   **orientation_dict, **fluctuationsCsv}
         # print("Averages keys: ", averages.keys())   
@@ -788,77 +790,6 @@ if __name__ == "__main__":
         exporter.export_orientation_data(averages)
         # exporter.export_with_pickle(averages)
         
-        # # print("Data exported: ", averages)
-
-        # plotter = DataPlotter(ap, cof,value=param)
-    
-        # # # print("Total tangential dissipation: ", averages['total_tangential_dissipation'])
-        # mean_global_normal = np.sum(hist_global_normal_avg*pdfs['contacts_hist_global_normal'])
-        # xi_N_global = hist_global_normal_avg/mean_global_normal*pdfs['contacts_hist_global_normal']
-        # xi_T_global = hist_global_tangential_avg/mean_global_normal*pdfs['contacts_hist_global_tangential']
-
-        # normalized_global_cp_normal = hist_global_normal_cp_avg*pdfs['contacts_hist_cont_point_global']
-        # normalized_global_cp_tangential = hist_global_tangential_cp_avg/np.mean(hist_global_normal_cp_avg)*pdfs['contacts_hist_cont_point_global']
-
-        # zeta_N_global = hist_global_normal_avg*pdfs['contacts_hist_global_normal']
-        # zeta_T_tangential = hist_global_tangential_avg*pdfs['contacts_hist_global_tangential']
-
-        # plotter.plot_polar_histogram(bins_global, xi_N_global, "$\\xi_N$", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, xi_T_global, "$\\xi_T$", symmetry=False)
-                                
-        # plotter.plot_polar_histogram(bins_global, zeta_N_global, "$\\zeta_N$", symmetry=False)
-        #                         #label = '$\rho(\lambda)\langle N(\lambda)\\rangle / \langle N \\rangle $')
-        # plotter.plot_polar_histogram(bins_global, zeta_T_tangential, '$\\zeta_T$', symmetry=False)
-
-        # # print("Sum of xi_N: ", np.sum(xi_N_global))    
-        # # print("Sum of xi_T: ", np.sum(xi_T_global))
-
-        # plotter.plot_time_variation(averages, df_csv) 
-        # plotter.plot_averages_with_std(averages)
-        # plotter.plot_pdf(distributions['thetax'], n_bins_orientation, "$\\theta_x$",  label = '$\\theta_x [^\\circ]$', median_value = thetax_mean)
-        # plotter.plot_pdf(distributions['thetaz'], n_bins_orientation, "$\\theta_z$",  label = '$\\theta_z [^\\circ]$', median_value = thetaz_mean)
-        # plotter.plot_polar_histogram(bins_global, hist_global_normal_avg, "Global force normal", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, hist_global_tangential_avg, "Global force tangential", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, hist_global_normal_cp_avg, "Global force normal contact point", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, hist_global_tangential_cp_avg, "Global force tangential contact point", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, pdfs['contacts_hist_global_normal'], "Global normal direction density", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, pdfs['contacts_hist_global_tangential'], "Global tangential direction density", symmetry=False)
-        # plotter.plot_polar_histogram(bins_global, pdfs['contacts_hist_cont_point_global'], "Global contact point density", symmetry=False)
-        # plotter.plot_polar_histogram(bins_local, pdfs['contacts_hist_cont_point_local'], "Local contact point density", symmetry=True)
-        # plotter.plot_polar_histogram(bins_local, hist_local_normal_avg, "Local force normal contact point", symmetry=True)
-        # plotter.plot_polar_histogram(bins_local, hist_local_tangential_avg, "Local force tangential contact point", symmetry=True)
-        # # plotter.plot_polar_histogram(bins_local, hist_local_tangential_avg/hist_local_normal_avg, "Ratio tangential to normal force", symmetry=True)
-        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']/2, bins_local, "Local contact point density",'$pdf$')
-        # plotter.plot_histogram_ellipsoid(hist_local_normal_avg, bins_local, "Local force normal contact point",'$F_n [N] $')
-        # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg, bins_local, "Local force tangential contact point",'$F_t [N] $')
-
-        # plotter.plot_histogram_ellipsoid(hist_local_normal_avg/(avgCsv['p_yy']*total_area), bins_local,
-        #                                   "Local force normal contact point normalized pressure",'$F_n/p A_p $')
-        # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg/(avgCsv['p_yy']*total_area), bins_local, 
-        #                                  "Local force tangential contact point normalized pressure",'$F_t/p A_p$')
-
-        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']*hist_local_normal_avg/(avgCsv['p_yy']*total_area*area_adjustments_ellipsoid), bins_local,
-        #                                   "Average Local force normal contact point normalized pressure",'$|F_n|/p A_p $')
-        # plotter.plot_histogram_ellipsoid(pdfs['contacts_hist_cont_point_local']*hist_local_tangential_avg/(avgCsv['p_yy']*total_area*area_adjustments_ellipsoid), bins_local, 
-        #                                  "Average Local force tangential contact point normalized pressure",'$|F_t|/p A_p$')
-
-        # plotter.plot_histogram_ellipsoid(hist_local_tangential_avg/hist_local_normal_avg, bins_local, "Ratio tangential to normal force",'$F_t/F_N$')
-        # # plotter.plot_histogram_ellipsoid_flat(hist_weigh_avg['normal_force_hist_mixed'] , 10,10, "Normal force mixed", '$F_n [N]$')
-        # # plotter.plot_histogram_ellipsoid_flat(hist_weigh_avg['tangential_force_hist_mixed'] , 10,10, "Tangential force mixed", '$F_t [N]$')
-        # plotter.plot_histogram_ellipsoid(pdfs['bin_counts_power'], bins_local, "Power dissipation density", '$p(contacts)$')
-        # plotter.plot_histogram_ellipsoid(hist_weigh_avg['power_dissipation_normal'], bins_local, "Power dissipation normal",'$P_n [W]$')
-        # plotter.plot_histogram_ellipsoid(hist_weigh_avg['power_dissipation_tangential'], bins_local, "Power dissipation tangential",'$P_t [W]$')
-        # plotter.plot_histogram_ellipsoid(hist_weigh_avg['power_dissipation_tangential']/hist_weigh_avg['power_dissipation_normal'], bins_local, "Power dissipation tangential to normal ratio", '$P_t/P_n$')
-        # total_dissipation_histogram = hist_weigh_avg['power_dissipation_normal']+hist_weigh_avg['power_dissipation_tangential']
-        # plotter.plot_histogram_ellipsoid(total_dissipation_histogram/total_average_dissipation_local, bins_local, "Total power dissipation",'$P/P_{tot}$')
-        # plotter.plot_polar_histogram(bins_local, hist_weigh_avg['power_dissipation_normal'], "Power diss normal", symmetry=True)
-        # power_normalized_area = total_dissipation_histogram*total_area/(2*area_adjustments_ellipsoid*total_average_dissipation_local)
-        # plotter.plot_histogram_ellipsoid(power_normalized_area, bins_local, "Power dissipation total (area)",'$P_j A_p /P_{tot} A_j $')
-
-        # ellipsoid_force_pdf = pdfs['contacts_hist_cont_point_local']*np.sqrt(hist_weigh_avg['local_normal_force_hist_cp']**2 + hist_weigh_avg['local_tangential_force_hist_cp']**2)
-        # plotter.plot_histogram_ellipsoid(ellipsoid_force_pdf/(avgCsv['p_yy']*total_area), bins_local, "Force density", '$\\langle F_j \\rangle / \\sigma_{yy} A_j$')
-
-        # plt.ion()
 
     else:
         #import the data with pickle
