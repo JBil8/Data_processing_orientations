@@ -100,7 +100,7 @@ def jeffrey_theoretical_velocity(shear_rate, ap, orientation):
     u_E_u = np.einsum('ni,ni->n', orientation, E_dot_u)
     straining_component = E_dot_u - u_E_u[:, np.newaxis] * orientation
 
-    omega_jeffrey = vorticity_component + beta * straining_component 
+    omega_jeffrey = beta * straining_component #+ vorticity_component
     return omega_jeffrey
 
 def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
@@ -129,14 +129,11 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     count_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='count', bins=bins_theta)
 
     # 4. Calculate the standard error of the mean, handling bins with zero counts
-    #    np.sqrt(count_stat) will produce a warning for zero counts, which is fine.
-    #    The division by zero will result in 'nan', which we handle next.
     omega_std_per_bin = std_stat / np.sqrt(count_stat)
 
     # 5. Clean up the results for empty bins (replace nan with 0)
     omega_per_bin = np.nan_to_num(mean_stat, nan=0.0)
     omega_std_per_bin = np.nan_to_num(omega_std_per_bin, nan=0.0)
-
 
     beta = (ap**2 - 1) / (ap**2 + 1)
     jeffrey_omega = -(1 - beta * np.cos(2 * (bin_centers))) / 2
@@ -165,9 +162,29 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
         return 0
     screening_factor = covariance / variance_jeffrey  # Screening factor for the Jeffrey model
 
+    omega_z_measured = omegas[:, 2]
+    omega_z_jeffrey = omega_jeffrey[:, 2]
+
+    # The 'dot product' now becomes a simple element-wise product of the z-components
+    product_z = omega_z_jeffrey * omega_z_measured
+
+    # Covariance is the mean of this product
+    covariance_z = np.mean(product_z)
+
+    # Variance is the mean of the squared theoretical z-component
+    variance_jeffrey_z = np.mean(omega_z_jeffrey**2)
+
+    # Calculate the screening factor, with a check for division by zero
+    if variance_jeffrey_z == 0:
+        screening_factor_z = 0
+    else:
+        screening_factor_z = covariance_z / variance_jeffrey_z
+
     # if screening_factor < 0:
     #     print(f"Warning: Negative screening factor, setting to zero. {screening_factor}")
         # screening_factor = 0
+
+    print(f"Screening factor: {screening_factor}, Screening factor z: {screening_factor_z}, Ratio at director angle: {ratio}")
 
     return screening_factor, bin_centers, omega_per_bin, omega_std_per_bin
 
@@ -215,7 +232,8 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
 
         # 3. Calculate lambda for this block
         lambda_i, bins, omega_bins, std_omega_bins = compute_jeffrey_screening(shear_rate, ap, orientations_block_flat, omegas_block_flat, theta_d)
-    
+        lambdas_per_block.append(lambda_i)
+
     # 4. Calculate the mean and standard error of the mean from the block values
     mean_lambda = np.mean(lambdas_per_block)
     # Use ddof=1 for sample standard deviation, as n_blocks is a small sample
@@ -332,6 +350,9 @@ def S2_to_gamma(results, shear_rate, n_particles):
     largest_eigenvalues = eigenvalues[:, -1]
     order_parameters = 3/2 * largest_eigenvalues  # Nematic order parameter S2
 
+    biaxiality = eigenvalues[:, 1] - eigenvalues[:, 0]  # Biaxiality parameter 
+
+
     # The director n is the eigenvector corresponding to the largest eigenvalue.
     # For eigh, this is the last column of the eigenvector matrix for each frame.
     directors = eigenvectors[:, :, -1]  # Shape: (n_frames, 3)
@@ -348,7 +369,7 @@ def S2_to_gamma(results, shear_rate, n_particles):
 
     gammas = np.linspace(0, 30, n_frames)  
 
-    return order_parameters, gammas, angles_rad
+    return order_parameters, gammas, angles_rad, biaxiality
 
 def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, n_starting_points=10, max_lag=None):
     """
@@ -770,11 +791,12 @@ if __name__ == "__main__":
             results_time = pool.map(combined_processor.process_single_step,
                                 [step for step in range(combined_processor.n_sim)])
 
-        S2_over_time, strains, angle_over_time = S2_to_gamma(results_time, shear_rate, 2000)
+        S2_over_time, strains, angle_over_time, biaxility_over_time = S2_to_gamma(results_time, shear_rate, 2000)
 
         orientation_dict['S2_over_time'] = S2_over_time
         orientation_dict['strains'] = strains
         orientation_dict['angle_over_time'] = angle_over_time
+        orientation_dict['biaxility_over_time'] = biaxility_over_time
 
         csvProcessor = ProcessorCsv(df_csv)
         csvProcessor.exclude_initial_strain_cycle(param)
