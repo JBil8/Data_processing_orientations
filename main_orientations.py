@@ -100,7 +100,7 @@ def jeffrey_theoretical_velocity(shear_rate, ap, orientation):
     u_E_u = np.einsum('ni,ni->n', orientation, E_dot_u)
     straining_component = E_dot_u - u_E_u[:, np.newaxis] * orientation
 
-    omega_jeffrey = beta * straining_component #+ vorticity_component
+    omega_jeffrey = beta * straining_component + vorticity_component
     return omega_jeffrey
 
 def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
@@ -247,41 +247,56 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
 
 def process_orientations(stacked_orientations):
     """
-    Compute the nematic parameter  and the director
+    Compute nematic parameters (S2, S4), tensors (Q, A4), and director.
     Masure how far from axisymmetric the distribution of orientations is.
     """
     N_strains = stacked_orientations.shape[0]
+    
     order_tensor = np.einsum('ij,ik->jk', stacked_orientations, stacked_orientations) / N_strains
-    S4 = np.einsum('ni,nj,nk,nl->ijkl', stacked_orientations, stacked_orientations,stacked_orientations, stacked_orientations) / N_strains
-    S4 -= np.einsum('ij, kl ->ijkl', np.eye(3), order_tensor) / 3  # Subtract isotropic part
-
-    nematic_tensor = order_tensor - np.eye(3) / 3  # Subtract the isotropic part
+    nematic_tensor = order_tensor - np.eye(3) / 3  # This is the Q-tensor
+    
     eigenvalues, eigenvectors = np.linalg.eig(nematic_tensor)
     sorted_indices = np.argsort(eigenvalues)[::-1]  # Sort in descending order
     eigenvalues = eigenvalues[sorted_indices]
     eigenvectors = eigenvectors[:, sorted_indices]
-    # compute the angle with the flow direction
-    theta_d = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])  # angle of the first eigenvector with respect to x-axis
-    director = eigenvectors[:, 0]  
-    nematic_order_parameter = 3/2*eigenvalues[0] 
-    angles_with_director = np.arccos(np.abs(np.dot(stacked_orientations, director)))  # Fold into [0, π/2]
-    # angles_with_director = raw_thetas  
-  
+    
+    director = eigenvectors[:, 0]  # Principal director (n)
+    S2_scalar = 3.0 / 2.0 * eigenvalues[0] 
     biaxiality = eigenvalues[1] - eigenvalues[2]  # Biaxiality parameter
+    
+    M4_tensor = np.einsum('ni,nj,nk,nl->ijkl', stacked_orientations, 
+                            stacked_orientations, stacked_orientations, 
+                            stacked_orientations) / N_strains
+    
+    # Define the isotropic fourth-order tensor (I_iso)
+    delta = np.eye(3)
+    I4_iso = (np.einsum('ij,kl->ijkl', delta, delta) +
+              np.einsum('ik,jl->ijkl', delta, delta) +
+              np.einsum('il,jk->ijkl', delta, delta)) / 15.0
+
+    A4_tensor = M4_tensor - I4_iso
+    cos_thetas = np.dot(stacked_orientations, director)
+    
+    S4_scalar = np.mean(P4(cos_thetas))
+
+    # --- Original calculations for context ---
+    theta_d = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])  # angle of the first eigenvector with respect to x-axis
+    angles_with_director = np.arccos(np.abs(np.dot(stacked_orientations, director)))  # Fold into [0, π/2]  
+  
     n_bins = 100
     f_data, edges = compute_polar_pdf(angles_with_director, n_bins=n_bins)
     bin_centers = 0.5 * (edges[:-1] + edges[1:])  # θ_i
     d_theta = edges[1] - edges[0]  # Δθ_i
 
     # 6) Fit only U, holding S fixed
-    model = lambda thetas, U: fit_equilibrium_ODF(thetas, nematic_order_parameter, U)
+    model = lambda thetas, U: fit_equilibrium_ODF(thetas, S2_scalar, U)
 
     initial_guess_U = 20
     popt, popv = spo.curve_fit(model, bin_centers, f_data, p0=[initial_guess_U], method = 'lm', ftol = 1e-8, maxfev=10000)
     U_fitted = popt[0]
 
     theta_fit = np.linspace(0, np.pi/2, 100)
-    f_fit = fit_equilibrium_ODF(theta_fit, nematic_order_parameter, U_fitted)
+    f_fit = fit_equilibrium_ODF(theta_fit, S2_scalar, U_fitted)
 
     # residuals = (f_data - model(bin_centers, U_fitted))**2 * np.sin(bin_centers) * d_theta
     # # chi_squared = np.sum(residuals * sin_theta_factor) / len(bin_centers)  
@@ -291,7 +306,7 @@ def process_orientations(stacked_orientations):
               * np.sin(bin_centers) * d_theta)
     rmse_sphere = np.sqrt(wsse / 2)
 
-    # print(f"Fitted U: {U_fitted:.3f}, RMSE: {rmse_sphere:.3f}, Nematic Order Parameter: {nematic_order_parameter:.3f}, Biaxiality: {biaxiality:.3f}")
+    # print(f"Fitted U: {U_fitted:.3f}, RMSE: {rmse_sphere:.3f}, Nematic Order Parameter: {S2_scalar:.3f}, Biaxiality: {biaxiality:.3f}")
 
     plt.figure(figsize=(8, 5))
     plt.plot(bin_centers, f_data, 'o', markersize=4, label="Data (per solid angle)")
@@ -316,7 +331,8 @@ def process_orientations(stacked_orientations):
     results['f_data'] = f_data
     results['U_fitted'] = U_fitted
     results['director'] = director
-    results['nematic_order_parameter'] = nematic_order_parameter
+    results['S2_scalar'] = S2_scalar
+    results['S4_scalar'] = S4_scalar
     results['biaxiality'] = biaxiality
     results['theta_d'] = theta_d
     results['eigenvalues'] = eigenvalues
@@ -329,7 +345,7 @@ def process_orientations(stacked_orientations):
     results['tau_r'] = tau_r
     results['A_infty'] = A_infty
     results['shear_rate'] = shear_rate
-    results['S4'] = S4
+    results['S4'] = A4_tensor
     results['nematic_tensor'] = nematic_tensor
     return results
 
@@ -464,9 +480,15 @@ def avg_log_likelihood(theta_data, f_fit):
 
 def P2(x):
     """
-    Calculates the second Legendre polynomial, P₂(x) = (3x² - 1)/2.
+    Calculates the second Legendre polynomial
     """
     return (3 * x**2 - 1) / 2
+
+def P4(x):
+    """
+    Calculates the fourth Legendre polynomial
+    """
+    return (35 * x**4 - 30 * x**2 + 3) / 8
 
 def fit_equilibrium_ODF(measured_thetas, S, U):
     """

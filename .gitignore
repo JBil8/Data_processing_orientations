@@ -206,3 +206,10 @@ Alpha_3.0_mu_0.4_viscous/
 *.pkl
 *.csv
 *.npy
+*.svg
+*.jpg
+*.gif
+*.mp4
+*.mp3
+*.png
+*.tar.gz
