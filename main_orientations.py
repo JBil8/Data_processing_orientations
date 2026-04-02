@@ -320,6 +320,29 @@ def process_orientations(stacked_orientations):
     # plt.tight_layout()
     plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
     plt.close()
+
+    angle_xy_plane = np.arctan2(stacked_orientations[:, 1], stacked_orientations[:, 0])
+    angle_xy_plane = np.where(angle_xy_plane < 0, angle_xy_plane +  np.pi, angle_xy_plane)
+    angle_temp = np.zeros_like(angle_xy_plane)
+    nb = len(angle_xy_plane)
+    if angle_temp%2==0:
+        angle_temp[:nb//2] = angle_xy_plane[nb//2:]
+        angle_temp[nb//2:] = angle_xy_plane[:nb//2]
+        angle_xy_plane = angle_temp
+    else:
+        angle_temp[:nb//2+1] = angle_xy_plane[nb//2:]
+        angle_temp[nb//2+1:] = angle_xy_plane[:nb//2]
+        angle_xy_plane = angle_temp
+
+    plt.figure(figsize=(6, 6))
+    plt.hist(angle_xy_plane, bins=100, density=True, alpha=0.7, color='blue')
+    plt.axvline(x=theta_d, color='red', linestyle='--', label='Director angle')
+    plt.xlabel(r'$\phi$ [rad]')
+    plt.ylabel('Probability Density')
+    plt.title('Azimuthal Angle Distribution in the XY Plane')
+    plt.grid(alpha=0.3)
+    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_azimuthal_angle_distribution.png', bbox_inches='tight')
+    plt.close()
     
     times, oacf, D_r, Pe, tau_r, A_infty  = measure_rotational_diffusion(stacked_orientations, 2000, shear_rate, n_starting_points=40, max_lag=None)
 
@@ -368,9 +391,7 @@ def S2_to_gamma(results, shear_rate, n_particles):
 
     biaxiality = eigenvalues[:, 1] - eigenvalues[:, 0]  # Biaxiality parameter 
 
-
     # The director n is the eigenvector corresponding to the largest eigenvalue.
-    # For eigh, this is the last column of the eigenvector matrix for each frame.
     directors = eigenvectors[:, :, -1]  # Shape: (n_frames, 3)
     flip_mask = directors[:, 0] < 0
     # Use the mask to flip the sign of the entire director vector for those frames.
