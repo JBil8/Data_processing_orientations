@@ -1,0 +1,20 @@
+{
+  "title": "Data_processing_orientations: post-processing of DEM simulations of sheared granular ellipsoids",
+  "description": "Post-processing code for orientation statistics of non-spherical granular particles under simple shear from LAMMPS/Liggghts DEM simulations: orientation distributions, nematic order, Maier-Saupe/ODF fits, Jeffrey-orbit comparison, and rotational diffusion.",
+  "creators": [
+    {
+      "name": "Bilotto, Jacopo",
+      "orcid": "0009-0009-6302-9111"
+    }
+  ],
+  "license": "GPL-3.0",
+  "keywords": [
+    "granular matter",
+    "discrete element method",
+    "orientation distribution",
+    "nematic order",
+    "simple shear"
+  ],
+  "upload_type": "software",
+  "access_right": "open"
+}

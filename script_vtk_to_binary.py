@@ -55,5 +55,13 @@ def find_and_convert_vtk_files(root_dir, overwrite=False):
                 else:
                     print(f"Skipping (Already Binary): {ascii_vtk_file}")
 
-root_directory = "/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/"
-find_and_convert_vtk_files(root_directory, overwrite=True)  # Set overwrite=False to keep both versions
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Convert ASCII VTK files to binary format.')
+    parser.add_argument('root_dir', type=str,
+                        help='root directory containing the raw simulation data')
+    parser.add_argument('--keep-ascii', action='store_false', dest='overwrite',
+                        help='keep the ASCII version (writes binary_* files instead of overwriting)')
+    args = parser.parse_args()
+    find_and_convert_vtk_files(args.root_dir, overwrite=args.overwrite)

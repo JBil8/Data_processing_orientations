@@ -28,7 +28,7 @@ class DataExporter:
 
     def import_with_pickle(self):
         # import the data with pickle for further analysis with appropriate name
-        with open(self.directory + '/simple_shear_ap' + self.ap + '_cof_' + self.cof + '_I_' + self.I + '.pkl', 'wb') as f:
+        with open(self.directory + '/simple_shear_ap' + self.ap + '_cof_' + self.cof + '_I_' + self.I + '.pkl', 'rb') as f:
             data = pkl.load(f)
         return data
 

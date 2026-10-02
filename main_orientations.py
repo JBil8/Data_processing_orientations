@@ -225,17 +225,14 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
     Returns:
         tuple: A tuple containing (mean_lambda, error_bar).
     """
-    # if n_steps % n_blocks != 0:
-    #     raise ValueError(f"n_steps ({n_steps}) must be divisible by n_blocks ({n_blocks})")
-
-    # 1. Reshape the flat data into a more useful format: (n_steps, n_particles, 3)
+    # Reshape the flat data into a more useful format: (n_steps, n_particles, 3)
     orientations_t = orientations_flat.reshape(n_steps, n_particles, 3)
     omegas_t = omegas_flat.reshape(n_steps, n_particles, 3)
 
     block_size = n_steps // n_blocks
     lambdas_per_block = []
 
-    # 2. Loop over each block
+    # Loop over each block
     for i in range(n_blocks):
         start_step = i * block_size
         end_step = (i + 1) * block_size
@@ -249,12 +246,12 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
         orientations_block_flat = orientations_block.reshape(-1, 3)
         omegas_block_flat = omegas_block.reshape(-1, 3)
 
-        # 3. Calculate lambda for this block
+        # Calculate lambda for this block
         lambda_i, bins, omega_bins, std_omega_bins = compute_jeffrey_screening(
             shear_rate, ap, orientations_block_flat, omegas_block_flat, theta_d)
         lambdas_per_block.append(lambda_i)
 
-    # 4. Calculate the mean and standard error of the mean from the block values
+    # Calculate the mean and standard error of the mean from the block values
     mean_lambda = np.mean(lambdas_per_block)
     # Use ddof=1 for sample standard deviation, as n_blocks is a small sample
     std_dev_of_lambdas = np.std(lambdas_per_block, ddof=1)
@@ -737,95 +734,6 @@ def process_results(results, bins_global=144, bins_local=10):
     results['omega_bins'] = omega_bins
     results['std_omega_bins'] = std_omega_bins
 
-    # thetax_bins = np.linspace(-np.pi/2, np.pi/2, 100)
-    # thetaz_bins = np.linspace(0, np.pi/2, 100)
-
-    # print("Distributions thetax: ", distributions['thetax'])
-    # print("Distributions thetaz: ", distributions['thetaz'])
-
-    # H, thetax_hedges, thetaz_hedges = np.histogram2d(distributions['thetax'], distributions['thetaz'], bins=[thetax_bins, thetaz_bins], density=True)
-
-    # theta_centers = 0.5 * (thetaz_hedges[:-1] + thetaz_hedges[1:])
-    # phi_centers = 0.5 * (thetax_hedges[:-1] + thetax_hedges[1:])
-    # theta_grid, phi_grid = np.meshgrid(theta_centers, phi_centers, indexing='ij')
-
-    # # Compute spherical integration weight
-    # dtheta = np.abs(theta_centers[1] - theta_centers[0])
-    # dphi = np.abs(phi_centers[1] - phi_centers[0])
-    # weights = np.sin(theta_grid)
-
-    # # Normalize
-    # normalization = np.sum(H * weights) * dtheta * dphi
-    # pdf = H / normalization / 4  # Normalize to integrate to 1 over the sphere
-
-    # # write data as npy format
-    # np.save('orientation_pdf.npy', pdf)
-    # np.save('thetax_hedges.npy', thetax_hedges)
-    # np.save('thetaz_hedges.npy', thetaz_hedges)
-
-    # plt.figure(figsize=(10, 10))
-    # plt.pcolormesh(thetax_hedges, thetaz_hedges, H, shading='auto', cmap='viridis')
-    # plt.colorbar(label='Probability Density')
-    # plt.xlabel('Azimuthal Angle $\phi$ [rad]', fontsize=12)
-    # plt.ylabel('Polar Angle $\\theta$ [rad]', fontsize=12)
-    # plt.title('2D Orientation Distribution $\\psi(\\theta, \phi)$', fontsize=14)
-    # # plt.xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
-    # #         ['0', '$\\pi/2$', '$\\pi$', '$3\\pi/2$', '$2\\pi$'])
-    # # plt.yticks([0, np.pi/2, np.pi], ['0', '$\\pi/2$', '$\\pi$'])
-    # plt.axis('equal')
-    # plt.grid(alpha=0.3)
-    # plt.show()
-
-    # plot the same pdf as a surface plot
-    # fig = plt.figure(figsize=(10, 10))
-    # ax = fig.add_subplot(111, projection='3d')
-    # X, Y = np.meshgrid(thetax_hedges[:-1], thetaz_hedges[:-1])
-    # ax.plot_surface(X, Y, pdf.T, cmap='viridis', edgecolor='none')
-    # ax.set_xlabel('Azimuthal Angle $\phi$ [rad]', fontsize=12)
-    # ax.set_ylabel('Polar Angle $\\theta$ [rad]', fontsize=12)
-    # ax.set_zlabel('Probability Density', fontsize=12)
-    # ax.set_title('3D Orientation Distribution $\\psi(\\theta, \phi)$', fontsize=14)
-    # ax.view_init(elev=30, azim=30)  # Adjust the view angle
-    # plt.show()
-
-    # distributions['thetax_particles'] = np.stack([result['thetax'] for result in results], axis=1)
-
-    # # Compute the weighted average histograms
-    # histograms_weighted_avg = {}
-    # histograms_weighted_avg['global_normal_force_hist'] = compute_weighted_average_hist(
-    #     histogram_sums['global_normal_force_hist'], histogram_sums['contacts_hist_global_normal'])
-    # histograms_weighted_avg['global_tangential_force_hist'] = compute_weighted_average_hist(
-    #     histogram_sums['global_tangential_force_hist'], histogram_sums['contacts_hist_global_tangential'])
-
-    # histograms_weighted_avg['local_normal_force_hist_cp'] = compute_weighted_average_hist(
-    #     histogram_sums['local_normal_force_hist_cp'], histogram_sums['contacts_hist_cont_point_local'])
-    # histograms_weighted_avg['local_tangential_force_hist_cp'] = compute_weighted_average_hist(
-    #     histogram_sums['local_tangential_force_hist_cp'], histogram_sums['contacts_hist_cont_point_local'])
-
-    # histograms_weighted_avg['global_normal_force_hist_cp'] = compute_weighted_average_hist(
-    #     histogram_sums['global_normal_force_hist_cp'], histogram_sums['contacts_hist_cont_point_global'])
-    # histograms_weighted_avg['global_tangential_force_hist_cp'] = compute_weighted_average_hist(
-    #     histogram_sums['global_tangential_force_hist_cp'], histogram_sums['contacts_hist_cont_point_global'])
-
-    # histograms_weighted_avg['power_dissipation_normal'] = compute_weighted_average_hist(
-    #     histogram_sums['power_dissipation_normal'], n_sim)
-    # histograms_weighted_avg['power_dissipation_tangential'] = compute_weighted_average_hist(
-    #     histogram_sums['power_dissipation_tangential'], n_sim)
-
-    # histograms_weighted_avg['normal_force_hist_mixed'] = compute_weighted_average_hist(
-    #     histogram_sums['normal_force_hist_mixed'], histogram_sums['counts_mixed'])
-
-    # histograms_weighted_avg['tangential_force_hist_mixed'] = compute_weighted_average_hist(
-    #     histogram_sums['tangential_force_hist_mixed'], histogram_sums['counts_mixed'])
-
-    # # Compute PDFs for contact distributions
-    # pdfs = {}
-    # pdfs['contacts_hist_global_normal'] = compute_pdf(histogram_sums['contacts_hist_global_normal'], 360/bins_global)
-    # pdfs['contacts_hist_global_tangential'] = compute_pdf(histogram_sums['contacts_hist_global_tangential'], 360/bins_global)
-    # pdfs['contacts_hist_cont_point_global'] = compute_pdf(histogram_sums['contacts_hist_cont_point_global'], 360/bins_global)
-    # pdfs['contacts_hist_cont_point_local'] = compute_pdf_on_ellipsoid(histogram_sums['contacts_hist_cont_point_local'], area_adjustments_ellipsoid)
-    # pdfs['bin_counts_power'] = compute_pdf_on_ellipsoid(histogram_sums['bin_counts_power'], area_adjustments_ellipsoid)
-
     return results
 
 
@@ -846,6 +754,10 @@ if __name__ == "__main__":
                         type=parse_argument, help='pressure')
     parser.add_argument('-np', '--num_processes', type=int,
                         help='number of processes to use in parallel', default=8)
+    parser.add_argument('-d', '--input_dir', type=str,
+                        help='path to the directory containing the raw simulation data '
+                             '(directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/)',
+                        default='/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/')
     args = parser.parse_args()
 
     # parsing command line arguments
@@ -855,10 +767,11 @@ if __name__ == "__main__":
     full_postprocess = args.postprocess
     pressure = args.pressure
     num_processes = args.num_processes
+    global_path = args.input_dir
 
     if full_postprocess == True:
 
-        global_path = "/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/"
+        # alternative cluster paths:
         # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_dt_0.15/"
         # global_path = "/work/lsms/jbilotto/simulations_simple_shear_orientations/"
 
@@ -924,12 +837,6 @@ if __name__ == "__main__":
 
     else:
         # import the data with pickle
-        importer = DataExporter(ap, cof, simulation_type, param)
-        averages, averages_dump = importer.import_with_pickle()
-
-        # plotter = DataPlotter(ap, cof, simulation_type ,param)
-        # plotter.plot_data(averages, averages_dump)
-        # plotter.plot_eulerian_velocities(averages)
-
-        # plot ellipsois in 3d
-        plotter.plot_ellipsoids(500, averages, averages_dump)
+        importer = DataExporter(ap, cof, I=param)
+        averages = importer.import_with_pickle()
+        print("Loaded keys:", list(averages.keys()))
