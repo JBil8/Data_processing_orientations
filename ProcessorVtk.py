@@ -47,6 +47,8 @@ class ProcessorVtk(DataProcessor):
         self.get_ids()
         self.get_data()
         self.compute_alignment()
+        g_contact = self.compute_g_at_contact_arbitrary_axis(box_lengths, self.ap, 2.0, self.nematic_director, dr=0.01)
+        print(f"Step {step}: g_contact = {g_contact}")
         # self.compute_mean_angular_displacement()
         vx_fluctuations, vy_fluctuations, vz_fluctuations = self.compute_velocity_fluctuations(box_lengths[1]) # averaged over all particles
         omega_average, omega_fluctuations = self.compute_angular_velocity_fluctuations()
@@ -75,6 +77,7 @@ class ProcessorVtk(DataProcessor):
                     "measured_shear_rate": self.measured_shear_rate,
                     "directors": self.directors, 
                     "omegas": self.omegas, 
+                    "g_contact": g_contact
                     # "c_delta_vy": c_delta_vy,
                     # "c_r_values": c_r_values,
                     # "c_delta_omega_z": c_delta_omega_z
@@ -332,6 +335,101 @@ class ProcessorVtk(DataProcessor):
         distances = np.sqrt(np.einsum('ijk,ijk->ij', diff, diff))  # Efficient L2 norm
         return distances
 
+    def compute_g_at_contact_arbitrary_axis(self, box_lengths, alpha, d_minor, alignment_axis, dr=0.011):
+        """
+        Computes the pair correlation function at contact g(d^+) for monodisperse 
+        spheroids aligned along an arbitrary 3D axis.
+        
+        Parameters:
+            box_lengths (numpy.ndarray): Box lengths [Lx, Ly, Lz, tilt].
+            alpha (float): Aspect ratio of the prolate spheroids (a/b).
+            d_minor (float): Minor axis diameter (2b) of the spheroids.
+            alignment_axis (array-like): 3D vector [nx, ny, nz] representing the average orientation.
+            dr (float): Width of the distance bins to resolve contact.
+            n_bins (int): Number of bins to compute just after contact.
+            
+        Returns:
+            g_contact (float): The value of g(r) at contact.
+        """
+        N = self.coor.shape[0]
+
+        # ---------------------------------------------------------
+        # 1. CONSTRUCT THE TRANSFORMATION TENSOR
+        # ---------------------------------------------------------
+        # Ensure the alignment axis is a normalized unit vector
+        n_vec = np.array(alignment_axis, dtype=np.float64)
+        n_vec /= np.linalg.norm(n_vec)
+        
+        # Create the transformation matrix: T = I + (1/alpha - 1) * (n (outer) n)
+        I = np.eye(3)
+        outer_product = np.outer(n_vec, n_vec)
+        T = I + (1.0 / alpha - 1.0) * outer_product
+        
+        # ---------------------------------------------------------
+        # 2. APPLY AFFINE STRETCH TO COORDINATES AND BOX
+        # ---------------------------------------------------------
+        # Apply transformation to all particle coordinates (coor @ T.T)
+        stretched_coor = self.coor @ T.T
+        
+        # Standard triclinic box matrix (Lx, Ly, Lz, tilt_xy)
+        box_matrix = np.diag(box_lengths[:3]) + np.array([
+            [0, box_lengths[3], 0], 
+            [0, 0, 0], 
+            [0, 0, 0]
+        ])
+        
+        # Apply transformation to the box vectors
+        stretched_box_matrix = box_matrix @ T.T
+        
+        # Calculate new effective volume and density
+        V_eff = np.linalg.det(stretched_box_matrix)
+        rho_eff = N / V_eff
+        
+        # ---------------------------------------------------------
+        # 3. VECTORIZED DISTANCES (Using transformed space)
+        # ---------------------------------------------------------
+        inv_box_matrix = np.linalg.inv(stretched_box_matrix)
+        
+        # (N, N, 3) broadcasting
+        diff = stretched_coor[:, np.newaxis, :] - stretched_coor[np.newaxis, :, :] 
+        
+        # Apply periodic boundary conditions using the stretched box
+        fractional_diff = diff @ inv_box_matrix.Tj
+        fractional_diff -= np.round(fractional_diff)
+        diff_real = fractional_diff @ stretched_box_matrix.T
+        
+        # Efficient L2 norm. Flattening immediately.
+        distances = np.sqrt(np.einsum('ijk,ijk->ij', diff_real, diff_real)).ravel()
+        
+        # ---------------------------------------------------------
+        # 4. HISTOGRAM & NORMALIZATION
+        # ---------------------------------------------------------
+        # Start the bins lower to catch the overlapping (soft) contacts!
+        # E.g., start at 0.98 * d_minor to allow up to 2% overlap
+
+        bins = np.linspace(d_minor * 0.5, d_minor * 3.0, 100)
+        counts, _ = np.histogram(distances, bins=bins)
+
+        r_inner = bins[:-1]
+        r_outer = bins[1:]
+        shell_volumes = (4.0 / 3.0) * np.pi * (r_outer**3 - r_inner**3)
+
+        g_r = counts / (N * rho_eff * shell_volumes)
+        bin_midpoints = 0.5 * (r_inner + r_outer)
+
+        import matplotlib.pyplot as plt
+        plt.plot(bin_midpoints, g_r)
+        plt.axvline(d_minor, color='red', linestyle='--', label='Expected d_minor')
+        plt.xlabel('Stretched Distance')
+        plt.ylabel('g(r)')
+        plt.legend()
+        plt.show()
+        
+        # The true contact value for soft spheres is the peak of the first shell
+        g_contact = np.max(g_r)
+        
+        return g_contact
+
     def compute_space_averages(self):
         """
         Compute the space averages of the velocities, angular velocities and forces
@@ -407,13 +505,15 @@ class ProcessorVtk(DataProcessor):
         # Sum the nematic matrices and subtract identity matrix and average over the number of particles
         S2_space_average = np.sum(3/2 * (nematic_matrices - np.eye(3)/3), axis=0) / self.n_central_atoms
 
-        # First eigenvalue of the nematic matrix
-        self.S2 = np.max(np.linalg.eigvals(S2_space_average))
+        # Compute both eigenvalues and eigenvectors (eigh is optimized for symmetric matrices)
+        eigenvalues, eigenvectors = np.linalg.eigh(S2_space_average)
 
-        # store the oreintation of the particles as a twod array for the spherical coordinates
-        
-        
-        
+        # eigh sorts in ascending order, so the largest eigenvalue is the last one [-1]
+        self.S2 = eigenvalues[-1]
+
+        # The nematic director 'n' is the eigenvector corresponding to that largest eigenvalue (the last column)
+        self.nematic_director = eigenvectors[:, -1]
+
     def eulerian_velocity(self, n_intervals):
         """
         Compute velocities in eulerian coordinates

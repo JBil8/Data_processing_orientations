@@ -4,12 +4,12 @@ import pickle
 import vtk
 import argparse
 import matplotlib.pyplot as plt
-#from scipy.spatial.transform import Rotation as R
+# from scipy.spatial.transform import Rotation as R
 import os
 import re
 import multiprocessing
 import time as tm
-from ProcessorVtk import ProcessorVtk   
+from ProcessorVtk import ProcessorVtk
 from ProcessorDump import ProcessorDump
 from CombinedProcessor import CombinedProcessor
 from DataPlotter import DataPlotter
@@ -18,10 +18,11 @@ from ReaderDump import ReaderDump
 from DataExporter import DataExporter
 from ProcessorCsv import ProcessorCsv
 from ProcessorDat import ProcessorDat
-from histogram_utils import*
+from histogram_utils import *
 from scipy.stats import binned_statistic
 import scipy.optimize as spo
 import functools
+
 
 def parse_argument(value):
     try:
@@ -31,17 +32,18 @@ def parse_argument(value):
             return int_value
     except ValueError:
         pass
-    
+
     try:
         # Try to convert to float
         return float(value)
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid argument value: {value}")
 
+
 def time_step_used(shear_rate, ap, factor, Young=5e6, rho=1000, nu=0.3, small_axis=1.0, shear_mod=1e6):
     """
     Compute the DEM stable time step using Hertz and Rayleigh contact time calculations.
-    
+
     Parameters:
         shear_rate (float): Shear rate.
         ap (float): Aspect ratio (ratio of long to small axis for prolate shapes).
@@ -57,7 +59,7 @@ def time_step_used(shear_rate, ap, factor, Young=5e6, rho=1000, nu=0.3, small_ax
     """
     # Define the long axis and average diameter based on the particle shape
     long_axis = ap * small_axis
-    if ap>1:
+    if ap > 1:
         avg_diameter = (2 * small_axis + long_axis) / 3 * 2
     else:
         avg_diameter = (small_axis + 2 * long_axis) / 3 * 2
@@ -66,15 +68,18 @@ def time_step_used(shear_rate, ap, factor, Young=5e6, rho=1000, nu=0.3, small_ax
     v_collision = 2 * shear_rate * avg_diameter
 
     # Compute hertz and rayleigh time steps
-    hertz_factor = 2.943 * (5 * np.sqrt(2) * np.pi * rho * (1 - nu**2) / (4 * Young))**(2 / 5)
+    hertz_factor = 2.943 * (5 * np.sqrt(2) * np.pi *
+                            rho * (1 - nu**2) / (4 * Young))**(2 / 5)
     min_dimen = min(small_axis, long_axis)
     dt_hertz = 2 * factor * hertz_factor * min_dimen / (v_collision)**(1 / 5)
-    dt_rayleigh = 2 * factor * np.pi * min_dimen * np.sqrt(rho / shear_mod) * (1 / (0.8766 + 0.1631 * nu))
+    dt_rayleigh = 2 * factor * np.pi * min_dimen * \
+        np.sqrt(rho / shear_mod) * (1 / (0.8766 + 0.1631 * nu))
 
     # Select the smaller of the Hertz and Rayleigh time steps
     dt = min(dt_hertz, dt_rayleigh)
     # print(f"Time step used: {dt}")
     return dt
+
 
 def jeffrey_theoretical_velocity(shear_rate, ap, orientation):
     """
@@ -89,7 +94,7 @@ def jeffrey_theoretical_velocity(shear_rate, ap, orientation):
     strain_rate_tensor = np.array([[0, shear_rate/2, 0],
                                    [shear_rate/2, 0, 0],
                                    [0, 0, 0]])
-    
+
     vorticity_tensor /= shear_rate
     strain_rate_tensor /= shear_rate
 
@@ -103,11 +108,13 @@ def jeffrey_theoretical_velocity(shear_rate, ap, orientation):
     omega_jeffrey = beta * straining_component + vorticity_component
     return omega_jeffrey
 
+
 def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
 
     omegas /= shear_rate
 
-    theta_angles = np.arctan2(orientations[:, 1], orientations[:, 0])  # angle with respect to flow direction in x-y plane 
+    # angle with respect to flow direction in x-y plane
+    theta_angles = np.arctan2(orientations[:, 1], orientations[:, 0])
 
     # reduce the angle to the range [-pi/2, pi/2]
     theta_angles = (theta_angles + np.pi/2) % np.pi - np.pi/2
@@ -118,15 +125,18 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     bins_theta = np.linspace(-np.pi/2, np.pi/2, n_bins_theta + 1)
     bin_centers = 0.5 * (bins_theta[:-1] + bins_theta[1:])
     bins_theta = np.linspace(-np.pi/2, np.pi/2, n_bins_theta + 1)
-   
+
     # 2. Extract the omega_z values
     omega_z = omegas[:, 2]
 
     # 3. Use binned_statistic to calculate mean, std, and count in one pass
     #    We request three statistics for each bin.
-    mean_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='mean', bins=bins_theta)
-    std_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='std', bins=bins_theta)
-    count_stat, _, _ = binned_statistic(theta_angles, omega_z, statistic='count', bins=bins_theta)
+    mean_stat, _, _ = binned_statistic(
+        theta_angles, omega_z, statistic='mean', bins=bins_theta)
+    std_stat, _, _ = binned_statistic(
+        theta_angles, omega_z, statistic='std', bins=bins_theta)
+    count_stat, _, _ = binned_statistic(
+        theta_angles, omega_z, statistic='count', bins=bins_theta)
 
     # 4. Calculate the standard error of the mean, handling bins with zero counts
     omega_std_per_bin = std_stat / np.sqrt(count_stat)
@@ -138,29 +148,36 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     beta = (ap**2 - 1) / (ap**2 + 1)
     jeffrey_omega = -(1 - beta * np.cos(2 * (bin_centers))) / 2
 
-    # compute the screening factor AS THE RATIO Of the interpolate measured to jeffrey at the theta_d angle
+    # compute the screening factor as the ratio the interpolate measured to jeffrey at the theta_d angle
     interpolated_measured = np.interp(theta_d, bin_centers, omega_per_bin)
-    jeffrey_theta_d = -(1 - beta * np.cos(2 *theta_d )) / 2
+    jeffrey_theta_d = -(1 - beta * np.cos(2 * theta_d)) / 2
     ratio = interpolated_measured / jeffrey_theta_d if jeffrey_theta_d != 0 else 0
 
     plt.figure(figsize=(4, 4))
     plt.plot(bin_centers, omega_per_bin, 'o-', label='Simulated', markersize=4)
     plt.plot(bin_centers, jeffrey_omega, '--', label='Jeffrey', color='red')
-    plt.axvline(x=theta_d, color='green', linestyle=':', label='Director angle, ratio = %.2f' % ratio)
-    plt.errorbar(bin_centers, omega_per_bin, yerr=omega_std_per_bin, fmt='o', color='blue', alpha=0.5, label='Std Error', markersize=4)
+    plt.axvline(x=theta_d, color='green', linestyle=':',
+                label='Director angle, ratio = %.2f' % ratio)
+    plt.errorbar(bin_centers, omega_per_bin, yerr=omega_std_per_bin,
+                 fmt='o', color='blue', alpha=0.5, label='Std Error', markersize=4)
     plt.xlabel(r'$\theta$ [rad]')
-    plt.ylabel(r'$\omega_z / \dot{\gamma}$')   
+    plt.ylabel(r'$\omega_z / \dot{\gamma}$')
     plt.legend()
-    plt.savefig('ap_' + str(ap) + 'mup_' + str(cof) + '_I_' + str(param) + '_jeffrey_comparison.png', bbox_inches='tight')
+    plt.savefig('ap_' + str(ap) + 'mup_' + str(cof) + '_I_' +
+                str(param) + '_jeffrey_comparison.png', bbox_inches='tight')
     plt.close()
 
     omega_jeffrey = jeffrey_theoretical_velocity(shear_rate, ap, orientations)
     dot_prod = np.einsum('ni, ni -> n', omega_jeffrey, omegas)
-    covariance = np.mean(dot_prod , axis=0)  # Covariance between theoretical and simulated angular velocities
-    variance_jeffrey = np.mean(np.einsum('ni, ni -> n', omega_jeffrey, omega_jeffrey), axis=0)  # Variance of the theoretical angular velocities
+    # Covariance between theoretical and simulated angular velocities
+    covariance = np.mean(dot_prod, axis=0)
+    # Variance of the theoretical angular velocities
+    variance_jeffrey = np.mean(
+        np.einsum('ni, ni -> n', omega_jeffrey, omega_jeffrey), axis=0)
     if variance_jeffrey == 0:
         return 0
-    screening_factor = covariance / variance_jeffrey  # Screening factor for the Jeffrey model
+    # Screening factor for the Jeffrey model
+    screening_factor = covariance / variance_jeffrey
 
     omega_z_measured = omegas[:, 2]
     omega_z_jeffrey = omega_jeffrey[:, 2]
@@ -184,9 +201,11 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     #     print(f"Warning: Negative screening factor, setting to zero. {screening_factor}")
         # screening_factor = 0
 
-    print(f"Screening factor: {screening_factor}, Screening factor z: {screening_factor_z}, Ratio at director angle: {ratio}")
+    print(
+        f"Screening factor: {screening_factor}, Screening factor z: {screening_factor_z}, Ratio at director angle: {ratio}")
 
     return screening_factor, bin_centers, omega_per_bin, omega_std_per_bin
+
 
 def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps, shear_rate, ap, theta_d, n_blocks=1):
     """
@@ -231,7 +250,8 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
         omegas_block_flat = omegas_block.reshape(-1, 3)
 
         # 3. Calculate lambda for this block
-        lambda_i, bins, omega_bins, std_omega_bins = compute_jeffrey_screening(shear_rate, ap, orientations_block_flat, omegas_block_flat, theta_d)
+        lambda_i, bins, omega_bins, std_omega_bins = compute_jeffrey_screening(
+            shear_rate, ap, orientations_block_flat, omegas_block_flat, theta_d)
         lambdas_per_block.append(lambda_i)
 
     # 4. Calculate the mean and standard error of the mean from the block values
@@ -245,29 +265,31 @@ def perform_block_analysis(orientations_flat, omegas_flat, n_particles, n_steps,
 
     return mean_lambda, error_bar, ave_omega, bins, omega_bins, std_omega_bins
 
+
 def process_orientations(stacked_orientations):
     """
     Compute nematic parameters (S2, S4), tensors (Q, A4), and director.
     Masure how far from axisymmetric the distribution of orientations is.
     """
     N_strains = stacked_orientations.shape[0]
-    
-    order_tensor = np.einsum('ij,ik->jk', stacked_orientations, stacked_orientations) / N_strains
+
+    order_tensor = np.einsum(
+        'ij,ik->jk', stacked_orientations, stacked_orientations) / N_strains
     nematic_tensor = order_tensor - np.eye(3) / 3  # This is the Q-tensor
-    
+
     eigenvalues, eigenvectors = np.linalg.eig(nematic_tensor)
     sorted_indices = np.argsort(eigenvalues)[::-1]  # Sort in descending order
     eigenvalues = eigenvalues[sorted_indices]
     eigenvectors = eigenvectors[:, sorted_indices]
-    
+
     director = eigenvectors[:, 0]  # Principal director (n)
-    S2_scalar = 3.0 / 2.0 * eigenvalues[0] 
+    S2_scalar = 3.0 / 2.0 * eigenvalues[0]
     biaxiality = eigenvalues[1] - eigenvalues[2]  # Biaxiality parameter
-    
-    M4_tensor = np.einsum('ni,nj,nk,nl->ijkl', stacked_orientations, 
-                            stacked_orientations, stacked_orientations, 
-                            stacked_orientations) / N_strains
-    
+
+    M4_tensor = np.einsum('ni,nj,nk,nl->ijkl', stacked_orientations,
+                          stacked_orientations, stacked_orientations,
+                          stacked_orientations) / N_strains
+
     # Define the isotropic fourth-order tensor (I_iso)
     delta = np.eye(3)
     I4_iso = (np.einsum('ij,kl->ijkl', delta, delta) +
@@ -276,41 +298,46 @@ def process_orientations(stacked_orientations):
 
     A4_tensor = M4_tensor - I4_iso
     cos_thetas = np.dot(stacked_orientations, director)
-    
+
     S4_scalar = np.mean(P4(cos_thetas))
 
     # --- Original calculations for context ---
-    theta_d = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])  # angle of the first eigenvector with respect to x-axis
-    angles_with_director = np.arccos(np.abs(np.dot(stacked_orientations, director)))  # Fold into [0, π/2]  
-  
+    # angle of the first eigenvector with respect to x-axis
+    theta_d = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])
+    angles_with_director = np.arccos(
+        np.abs(np.dot(stacked_orientations, director)))  # Fold into [0, π/2]
+
     n_bins = 100
     f_data, edges = compute_polar_pdf(angles_with_director, n_bins=n_bins)
     bin_centers = 0.5 * (edges[:-1] + edges[1:])  # θ_i
     d_theta = edges[1] - edges[0]  # Δθ_i
 
     # 6) Fit only U, holding S fixed
-    model = lambda thetas, U: fit_equilibrium_ODF(thetas, S2_scalar, U)
+    def model(thetas, U): return fit_equilibrium_ODF(thetas, S2_scalar, U)
 
     initial_guess_U = 20
-    popt, popv = spo.curve_fit(model, bin_centers, f_data, p0=[initial_guess_U], method = 'lm', ftol = 1e-8, maxfev=10000)
+    popt, popv = spo.curve_fit(model, bin_centers, f_data, p0=[
+                               initial_guess_U], method='lm', ftol=1e-8, maxfev=10000)
     U_fitted = popt[0]
 
     theta_fit = np.linspace(0, np.pi/2, 100)
     f_fit = fit_equilibrium_ODF(theta_fit, S2_scalar, U_fitted)
 
     # residuals = (f_data - model(bin_centers, U_fitted))**2 * np.sin(bin_centers) * d_theta
-    # # chi_squared = np.sum(residuals * sin_theta_factor) / len(bin_centers)  
+    # # chi_squared = np.sum(residuals * sin_theta_factor) / len(bin_centers)
     # rmse = np.sqrt(residuals)/(2 * np.pi)
 
     wsse = np.sum((f_data - model(bin_centers, U_fitted))**2
-              * np.sin(bin_centers) * d_theta)
+                  * np.sin(bin_centers) * d_theta)
     rmse_sphere = np.sqrt(wsse / 2)
 
     # print(f"Fitted U: {U_fitted:.3f}, RMSE: {rmse_sphere:.3f}, Nematic Order Parameter: {S2_scalar:.3f}, Biaxiality: {biaxiality:.3f}")
 
     plt.figure(figsize=(8, 5))
-    plt.plot(bin_centers, f_data, 'o', markersize=4, label="Data (per solid angle)")
-    plt.plot(theta_fit, f_fit, '--', label=f"Maier–Saupe fit (U={U_fitted:.3f})")
+    plt.plot(bin_centers, f_data, 'o', markersize=4,
+             label="Data (per solid angle)")
+    plt.plot(theta_fit, f_fit, '--',
+             label=f"Maier–Saupe fit (U={U_fitted:.3f})")
     plt.xlabel(r'$\theta$ [rad]')
     plt.ylabel(r'$f(\theta)$ (per unit solid angle)')
     plt.title('Orientation ODF and Maier–Saupe Fit')
@@ -318,14 +345,17 @@ def process_orientations(stacked_orientations):
     plt.ylim(0, 1.1 * np.max(f_data))
     plt.legend()
     # plt.tight_layout()
-    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
+    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' +
+                str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
     plt.close()
 
-    angle_xy_plane = np.arctan2(stacked_orientations[:, 1], stacked_orientations[:, 0])
-    angle_xy_plane = np.where(angle_xy_plane < 0, angle_xy_plane +  np.pi, angle_xy_plane)
+    angle_xy_plane = np.arctan2(
+        stacked_orientations[:, 1], stacked_orientations[:, 0])
+    angle_xy_plane = np.where(
+        angle_xy_plane < 0, angle_xy_plane + np.pi, angle_xy_plane)
     angle_temp = np.zeros_like(angle_xy_plane)
     nb = len(angle_xy_plane)
-    if angle_temp%2==0:
+    if angle_temp % 2 == 0:
         angle_temp[:nb//2] = angle_xy_plane[nb//2:]
         angle_temp[nb//2:] = angle_xy_plane[:nb//2]
         angle_xy_plane = angle_temp
@@ -341,10 +371,12 @@ def process_orientations(stacked_orientations):
     plt.ylabel('Probability Density')
     plt.title('Azimuthal Angle Distribution in the XY Plane')
     plt.grid(alpha=0.3)
-    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) + '_azimuthal_angle_distribution.png', bbox_inches='tight')
+    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) +
+                '_azimuthal_angle_distribution.png', bbox_inches='tight')
     plt.close()
-    
-    times, oacf, D_r, Pe, tau_r, A_infty  = measure_rotational_diffusion(stacked_orientations, 2000, shear_rate, n_starting_points=40, max_lag=None)
+
+    times, oacf, D_r, Pe, tau_r, A_infty = measure_rotational_diffusion(
+        stacked_orientations, 2000, shear_rate, n_starting_points=40, max_lag=None)
 
     # print(f"Rotational diffusion coefficient D_r: {D_r:.3f}, Peclet number Pe: {Pe:.3f}")
 
@@ -372,6 +404,7 @@ def process_orientations(stacked_orientations):
     results['nematic_tensor'] = nematic_tensor
     return results
 
+
 def S2_to_gamma(results, shear_rate, n_particles):
 
     orientations = np.concatenate([result['directors'] for result in results])
@@ -379,9 +412,10 @@ def S2_to_gamma(results, shear_rate, n_particles):
     orientations = orientations.reshape(n_frames, n_particles, 3)
 
     Identity = np.eye(3)
-    order_tensor = np.einsum('ijk,ijl->ikl', orientations, orientations)/n_particles
+    order_tensor = np.einsum(
+        'ijk,ijl->ikl', orientations, orientations)/n_particles
     order_tensor -= Identity[np.newaxis, :, ]/3
- 
+
     # angle with the flow direction from director
     eigenvalues, eigenvectors = np.linalg.eigh(order_tensor)
 
@@ -389,7 +423,7 @@ def S2_to_gamma(results, shear_rate, n_particles):
     largest_eigenvalues = eigenvalues[:, -1]
     order_parameters = 3/2 * largest_eigenvalues  # Nematic order parameter S2
 
-    biaxiality = eigenvalues[:, 1] - eigenvalues[:, 0]  # Biaxiality parameter 
+    biaxiality = eigenvalues[:, 1] - eigenvalues[:, 0]  # Biaxiality parameter
 
     # The director n is the eigenvector corresponding to the largest eigenvalue.
     directors = eigenvectors[:, :, -1]  # Shape: (n_frames, 3)
@@ -404,28 +438,29 @@ def S2_to_gamma(results, shear_rate, n_particles):
     # The result is in radians, in the range [-pi, pi].
     angles_rad = np.arctan2(ny, nx)
 
-    gammas = np.linspace(0, 30, n_frames)  
+    gammas = np.linspace(0, 30, n_frames)
 
     return order_parameters, gammas, angles_rad, biaxiality
+
 
 def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, n_starting_points=10, max_lag=None):
     """
     Measure rotational diffusion coefficient D_r via autocorrelation of P2(u · u')
-    
+
     Parameters:
     - stacked_orientations: (n_frames * n_particles, 3) array of unit vectors
     - n_particles: Number of particles
     - shear_rate: known shear rate (used to compute time step)
     - n_starting_points: number of evenly spaced starting time points to average over
     - max_lag: maximum number of time lags (optional, default: all possible)
-    
+
     Returns:
     - times: array of times corresponding to lags
     - C: autocorrelation array (averaged over particles and starting points)
     """
     delta_gamma = 1 / 100  # time step in shear units
     delta_t = delta_gamma / shear_rate
-    
+
     n_total = stacked_orientations.shape[0]
     n_frames = n_total // n_particles
 
@@ -436,7 +471,8 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
         max_lag = n_frames // 2
 
     # Choose starting indices evenly spaced
-    start_indices = np.linspace(0, n_frames - max_lag - 1, n_starting_points, dtype=int)
+    start_indices = np.linspace(
+        0, n_frames - max_lag - 1, n_starting_points, dtype=int)
 
     oacf = np.zeros(max_lag)
     msad = np.zeros(max_lag)  # Mean square angular displacement
@@ -444,11 +480,14 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
         u0 = orientations[start]  # shape (n_particles, 3)
         for lag in range(max_lag):
             u_t = orientations[start + lag]  # shape (n_particles, 3)
-            dot = np.einsum('ij,ij->i', u0, u_t)  # dot product u(0) · u(t) for all particles
+            # dot product u(0) · u(t) for all particles
+            dot = np.einsum('ij,ij->i', u0, u_t)
             oacf[lag] += (dot**2).mean()
 
-            delta_angle = np.arccos(np.clip(dot, -1.0, 1.0))  # Ensure valid input for arccos
-            msad[lag] += (delta_angle**2).mean()  # Mean square angular displacement
+            # Ensure valid input for arccos
+            delta_angle = np.arccos(np.clip(dot, -1.0, 1.0))
+            # Mean square angular displacement
+            msad[lag] += (delta_angle**2).mean()
 
     oacf /= len(start_indices)
     msad /= len(start_indices)  # Average over starting points
@@ -459,45 +498,49 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
         """
         Model for the autocorrelation function: A_infty + oacf * exp(-t/tau_r)
         """
-        return A_infty + (1 -A_infty) * np.exp(-t / tau_r)
+        return A_infty + (1 - A_infty) * np.exp(-t / tau_r)
 
     def short_time_decay(t, D_r):
-        return 2* D_r * t
+        return 2 * D_r * t
 
     # perform the fit to exrtract A_infty and tau_r
     initial_guess = [0, 1]  # Initial guess for A_infty and tau_r
     try:
-        popt, _ = spo.curve_fit(long_time_decay, times, oacf, p0=initial_guess, maxfev=10000)
+        popt, _ = spo.curve_fit(long_time_decay, times,
+                                oacf, p0=initial_guess, maxfev=10000)
         A_infty, tau_r = popt
 
-        popt_short, _ = spo.curve_fit(short_time_decay, times, msad , p0=[0.1], maxfev=10000)
+        popt_short, _ = spo.curve_fit(
+            short_time_decay, times, msad, p0=[0.1], maxfev=10000)
 
     except RuntimeError as e:
         print(f"Fit failed: {e}")
         A_infty, tau_r = 0, 1  # Default values if fit fails
 
-    D_r =(1 -A_infty) / (4 * tau_r)  # Rotational diffusion coefficient
+    D_r = (1 - A_infty) / (4 * tau_r)  # Rotational diffusion coefficient
     Pe = shear_rate / D_r  # Peclet number
 
-    D_r_short =  popt_short[0] 
-    Pe_short = shear_rate / D_r_short  
+    D_r_short = popt_short[0]
+    Pe_short = shear_rate / D_r_short
     # plt.figure(figsize=(4, 3))
     # plt.plot(times, oacf, 'o', markersize=4, label='OACF of P2(u · u\')')
     # plt.plot(times, long_time_decay(times, A_infty, tau_r), '--', label=f'Fit: A_infty={A_infty:.2f}, tau_r={tau_r:.2f}')
     # # plt.plot(times, short_time_decay(times, popt_short[0]), '--', label=f'Short time fit: A={popt_short[0]:.2f}')
     # # plt.plot(times, msad, 'x', markersize=4, label='Mean square angular displacement')
     # plt.xlabel('$t$ [s]')
-    # plt.ylabel('$ \\langle ( \\mathbf{{u}}(t) \\cdot \\mathbf{{u}}(0) )^2 \\rangle $') 
+    # plt.ylabel('$ \\langle ( \\mathbf{{u}}(t) \\cdot \\mathbf{{u}}(0) )^2 \\rangle $')
     # plt.legend()
     # plt.savefig(f"ap_{ap}_cof_{cof}_I_{param}_rotational_diffusion_fit.png", dpi= 300, bbox_inches='tight')
     # # plt.show()
 
     return times, oacf, D_r, Pe, tau_r, A_infty
 
+
 def avg_log_likelihood(theta_data, f_fit):
     f_vals = f_fit(theta_data)
     f_vals[f_vals <= 0] = 1e-10  # Avoid log(0)
     return np.mean(np.log(f_vals))
+
 
 def P2(x):
     """
@@ -505,11 +548,13 @@ def P2(x):
     """
     return (3 * x**2 - 1) / 2
 
+
 def P4(x):
     """
     Calculates the fourth Legendre polynomial
     """
     return (35 * x**4 - 30 * x**2 + 3) / 8
+
 
 def fit_equilibrium_ODF(measured_thetas, S, U):
     """
@@ -520,20 +565,21 @@ def fit_equilibrium_ODF(measured_thetas, S, U):
     """
     # Calculate the cosine of the angles, which is the argument for P₂
     cos_thetas = np.cos(measured_thetas)
-    
+
     # The argument of the exponential is now based on the Legendre polynomial
     legendre_term = P2(cos_thetas)
-    
+
     # The numerator now uses the physically standard Maier-Saupe potential
     # The potential is proportional to U * S * P₂(cosθ)
     numerator = np.exp(S * U * legendre_term)
-    
+
     # The normalization procedure remains identical, as it correctly integrates
     # the un-normalized probability over the solid angle.
     integrand = numerator * np.sin(measured_thetas)
     denominator = 4 * np.pi * np.trapezoid(integrand, x=measured_thetas)
-    
+
     return numerator / denominator
+
 
 def compute_polar_pdf(theta_array, n_bins=50):
     """
@@ -557,39 +603,45 @@ def compute_polar_pdf(theta_array, n_bins=50):
 
     return pdf, edges
 
+
 def compute_autocorrelation_function(property):
     """
     Compute the autocorrelation function as a function of strain for the y-velocity component.
-    
+
     Parameters:
         property (numpy.ndarray): A 2D array of shape (n_particles, n_strains) representing the particles' fluctuation of the physical property.
-    
+
     Returns:
         numpy.ndarray: The normalized autocorrelation function as a function of strain (averaged over particles and strain steps).
     """
     # Extract dimensions
     n_particles, n_strains = property.shape
-    
+
     # Compute the FFT along the strain axis (axis=1)
-    fft_property = np.fft.fft(property, n=2*n_strains, axis=1)  # Zero-padding to 2*n_strains for circular convolution
-    power_spectrum = fft_property * np.conjugate(fft_property)  # Compute the power spectrum
-    
+    # Zero-padding to 2*n_strains for circular convolution
+    fft_property = np.fft.fft(property, n=2*n_strains, axis=1)
+    power_spectrum = fft_property * \
+        np.conjugate(fft_property)  # Compute the power spectrum
+
     # Compute the inverse FFT to get the autocorrelation along the strain axis
-    autocorr = np.fft.ifft(power_spectrum, axis=1).real[:, :n_strains]  # First n_strains terms only
-    
+    # First n_strains terms only
+    autocorr = np.fft.ifft(power_spectrum, axis=1).real[:, :n_strains]
+
     # Average over particles to get a single autocorrelation for each particle
-    autocorr_per_particle = autocorr / n_strains  # Normalize by the number of strain steps (scaling factor)
-    
+    # Normalize by the number of strain steps (scaling factor)
+    autocorr_per_particle = autocorr / n_strains
+
     # Average over particles to get the final autocorrelation function
     avg_autocorr = np.mean(autocorr_per_particle, axis=0)
-    
+
     # Compute the global mean squared fluctuation (over particles and strain steps)
     mean_squared_fluctuations = np.mean(property**2)
-    
+
     # Normalize the autocorrelation function
     avg_autocorr /= mean_squared_fluctuations
 
     return avg_autocorr
+
 
 def compute_stress_orientation(dictionary):
     """
@@ -601,27 +653,29 @@ def compute_stress_orientation(dictionary):
     phi = dictionary['phi']
     U = dictionary['U_fitted']
     shear_rate = dictionary['shear_rate']
-    pressure = dictionary['p_yy']  
+    pressure = dictionary['p_yy']
 
-    correction_density = phi * (1- 3/4 * phi) / (1-phi)**2 
-    U_tilde = 3/4* U * correction_density  
+    correction_density = phi * (1 - 3/4 * phi) / (1-phi)**2
+    U_tilde = 3/4 * U * correction_density
 
-    # create the strain rate tensor from simple shear 
+    # create the strain rate tensor from simple shear
     strain_rate_tensor = 1/2 * np.array([[0, shear_rate, 0],
-                                   [shear_rate, 0, 0],
-                                   [0, 0, 0]])
-    
+                                         [shear_rate, 0, 0],
+                                         [0, 0, 0]])
+
     T1 = np.einsum('ijkl, kl->ij', S4, strain_rate_tensor)  # 2nd order tensor
-    T2 = np.einsum('ijkl, kl->ij', S4, S2)  
+    T2 = np.einsum('ijkl, kl->ij', S4, S2)
     T3 = S2@S2
 
-    total_stress = 2*U_tilde* (T3 + phi*S2/3 - T2)  # DE theory stress tensor missing constant
+    # DE theory stress tensor missing constant
+    total_stress = 2*U_tilde * (T3 + phi*S2/3 - T2)
 
     const_fit = - pressure / total_stress[1, 1]
 
     stress_tensor = const_fit * total_stress
 
     return stress_tensor, const_fit
+
 
 def process_results(results, bins_global=144, bins_local=10):
     """Process the results to extract and average histograms."""
@@ -645,7 +699,7 @@ def process_results(results, bins_global=144, bins_local=10):
         'tangential_force_hist_mixed': bins_local**2,
         'counts_mixed': bins_local**2
     }
-    
+
     # Initialize sums for each histogram type
     histogram_sums = {key: np.zeros(bins) for key, bins in bins_config.items()}
 
@@ -660,20 +714,23 @@ def process_results(results, bins_global=144, bins_local=10):
         if key in histogram_sums:
             histogram_sums[key] = compute_histogram_sum(results, key)
         elif key in ['trackedGrainsOrientation', 'trackedGrainsPosition', 'thetax', 'thetaz', 'directors', 'omegas']:
-            distributions[key] = np.concatenate([result[key] for result in results])
+            distributions[key] = np.concatenate(
+                [result[key] for result in results])
         # stack the fluctuations of the velocity and angular velocity to compute the temporal autocorrelation
         elif key in ['vy_velocity', 'omegaz_velocity']:
-            distributions[key] = np.stack([result[key] for result in results], axis=1)
+            distributions[key] = np.stack(
+                [result[key] for result in results], axis=1)
         else:
             # compute the average of the scalar values
-            averages[key] = np.mean([result[key] for result in results], axis=0)
-    
+            averages[key] = np.mean([result[key]
+                                    for result in results], axis=0)
 
-    results =  process_orientations(distributions['directors'])
-    
-    screening_jeffrey, error_screening, ave_omega, bins, omega_bins, std_omega_bins = perform_block_analysis(distributions['directors'], distributions['omegas'], 2000, n_sim, shear_rate, ap, results['theta_d']) 
-    
-    results['screening_jeffrey'] = screening_jeffrey    
+    results = process_orientations(distributions['directors'])
+
+    screening_jeffrey, error_screening, ave_omega, bins, omega_bins, std_omega_bins = perform_block_analysis(
+        distributions['directors'], distributions['omegas'], 2000, n_sim, shear_rate, ap, results['theta_d'])
+
+    results['screening_jeffrey'] = screening_jeffrey
     results['error_screening'] = error_screening
     results['ave_omega'] = ave_omega
     results['theta_bins'] = bins
@@ -712,7 +769,7 @@ def process_results(results, bins_global=144, bins_local=10):
     # plt.xlabel('Azimuthal Angle $\phi$ [rad]', fontsize=12)
     # plt.ylabel('Polar Angle $\\theta$ [rad]', fontsize=12)
     # plt.title('2D Orientation Distribution $\\psi(\\theta, \phi)$', fontsize=14)
-    # # plt.xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi], 
+    # # plt.xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
     # #         ['0', '$\\pi/2$', '$\\pi$', '$3\\pi/2$', '$2\\pi$'])
     # # plt.yticks([0, np.pi/2, np.pi], ['0', '$\\pi/2$', '$\\pi$'])
     # plt.axis('equal')
@@ -730,26 +787,26 @@ def process_results(results, bins_global=144, bins_local=10):
     # ax.set_title('3D Orientation Distribution $\\psi(\\theta, \phi)$', fontsize=14)
     # ax.view_init(elev=30, azim=30)  # Adjust the view angle
     # plt.show()
-    
+
     # distributions['thetax_particles'] = np.stack([result['thetax'] for result in results], axis=1)
-    
+
     # # Compute the weighted average histograms
     # histograms_weighted_avg = {}
     # histograms_weighted_avg['global_normal_force_hist'] = compute_weighted_average_hist(
     #     histogram_sums['global_normal_force_hist'], histogram_sums['contacts_hist_global_normal'])
     # histograms_weighted_avg['global_tangential_force_hist'] = compute_weighted_average_hist(
     #     histogram_sums['global_tangential_force_hist'], histogram_sums['contacts_hist_global_tangential'])
-    
+
     # histograms_weighted_avg['local_normal_force_hist_cp'] = compute_weighted_average_hist(
     #     histogram_sums['local_normal_force_hist_cp'], histogram_sums['contacts_hist_cont_point_local'])
     # histograms_weighted_avg['local_tangential_force_hist_cp'] = compute_weighted_average_hist(
     #     histogram_sums['local_tangential_force_hist_cp'], histogram_sums['contacts_hist_cont_point_local'])
-    
+
     # histograms_weighted_avg['global_normal_force_hist_cp'] = compute_weighted_average_hist(
     #     histogram_sums['global_normal_force_hist_cp'], histogram_sums['contacts_hist_cont_point_global'])
     # histograms_weighted_avg['global_tangential_force_hist_cp'] = compute_weighted_average_hist(
     #     histogram_sums['global_tangential_force_hist_cp'], histogram_sums['contacts_hist_cont_point_global'])
-    
+
     # histograms_weighted_avg['power_dissipation_normal'] = compute_weighted_average_hist(
     #     histogram_sums['power_dissipation_normal'], n_sim)
     # histograms_weighted_avg['power_dissipation_tangential'] = compute_weighted_average_hist(
@@ -757,7 +814,7 @@ def process_results(results, bins_global=144, bins_local=10):
 
     # histograms_weighted_avg['normal_force_hist_mixed'] = compute_weighted_average_hist(
     #     histogram_sums['normal_force_hist_mixed'], histogram_sums['counts_mixed'])
-    
+
     # histograms_weighted_avg['tangential_force_hist_mixed'] = compute_weighted_average_hist(
     #     histogram_sums['tangential_force_hist_mixed'], histogram_sums['counts_mixed'])
 
@@ -773,18 +830,25 @@ def process_results(results, bins_global=144, bins_local=10):
 
 
 if __name__ == "__main__":
-    
-    parser = argparse.ArgumentParser(description='Process granular simulation.')
-    parser.add_argument('-c', '--cof', type=float, help='coefficient of friction particles-particles')
+
+    parser = argparse.ArgumentParser(
+        description='Process granular simulation.')
+    parser.add_argument('-c', '--cof', type=float,
+                        help='coefficient of friction particles-particles')
     parser.add_argument('-a', '--ap', type=float, help='aspect ratio')
-    parser.add_argument('-v', '--value', type=float, help='packing fraction or Inertial number depensing on the type of simulation')
-    parser.add_argument('-p', '--postprocess', action='store_false', help='whether to postprocess the data or simply import the pkl file, default is True', default=True)
-    parser.add_argument('-cw', '--cof_wall', action='store_false', help='coefficient of friction particles-walls')
-    parser.add_argument('-s', '--pressure', type = parse_argument, help='pressure')
-    parser.add_argument('-np', '--num_processes', type = int, help='number of processes to use in parallel', default=8)
+    parser.add_argument('-v', '--value', type=float,
+                        help='packing fraction or Inertial number depensing on the type of simulation')
+    parser.add_argument('-p', '--postprocess', action='store_false',
+                        help='whether to postprocess the data or simply import the pkl file, default is True', default=True)
+    parser.add_argument('-cw', '--cof_wall', action='store_false',
+                        help='coefficient of friction particles-walls')
+    parser.add_argument('-s', '--pressure',
+                        type=parse_argument, help='pressure')
+    parser.add_argument('-np', '--num_processes', type=int,
+                        help='number of processes to use in parallel', default=8)
     args = parser.parse_args()
 
-    #parsing command line arguments
+    # parsing command line arguments
     cof = args.cof
     ap = args.ap
     param = args.value
@@ -797,26 +861,28 @@ if __name__ == "__main__":
         global_path = "/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/"
         # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_dt_0.15/"
         # global_path = "/work/lsms/jbilotto/simulations_simple_shear_orientations/"
-        
+
         plt.ioff()
-         #initialize the vtk reader
-        data_read = ReaderVtk(cof, ap, I=param, pressure = pressure)
+        # initialize the vtk reader
+        data_read = ReaderVtk(cof, ap, I=param, pressure=pressure)
         data_read.read_data(global_path, 'simple_shear_', box=True)
         data_read.no_wall_atoms()
         data_read.get_initial_velocities_and_orientations()
         df_csv, shear_rate = data_read.read_csv_file()
         dt_hertz = time_step_used(shear_rate, ap, 1.5*0.08)
-       
+
         df_dat = data_read.read_dat_file()
         particles_volume = data_read.get_particles_volume()
-        #intialize the dump reader
-        data_dump = ReaderDump(cof, ap, I=param, pressure = pressure)
+        # intialize the dump reader
+        data_dump = ReaderDump(cof, ap, I=param, pressure=pressure)
         data_dump.read_data(global_path, 'simple_shear_contact_data_')
         to_process_vtk = ProcessorVtk(data_read)
-        to_process_dump = ProcessorDump(data_dump, data_read.n_wall_atoms, data_read.n_central_atoms)  
-        combined_processor = CombinedProcessor(to_process_vtk, to_process_dump, data_read.file_list_box, shear_rate, dt_hertz)
+        to_process_dump = ProcessorDump(
+            data_dump, data_read.n_wall_atoms, data_read.n_central_atoms)
+        combined_processor = CombinedProcessor(
+            to_process_vtk, to_process_dump, data_read.file_list_box, shear_rate, dt_hertz)
 
-        if param >=0.01:
+        if param >= 0.01:
             shear_one_index = 2000
         else:
             shear_one_index = 400
@@ -824,17 +890,18 @@ if __name__ == "__main__":
         n_sim = combined_processor.n_sim-shear_one_index
         with multiprocessing.Pool(num_processes) as pool:
             results = pool.map(combined_processor.process_single_step,
-                                [step for step in range(shear_one_index, combined_processor.n_sim)])
+                               [step for step in range(shear_one_index, combined_processor.n_sim)])
 
         # averages, hist_weigh_avg, pdfs, distributions = process_results(results, num_bins_global, num_bins_local)
         orientation_dict = process_results(results)
-   
+
         # Compute nematic parameter and show it is steady state
         with multiprocessing.Pool(num_processes) as pool:
             results_time = pool.map(combined_processor.process_single_step,
-                                [step for step in range(combined_processor.n_sim)])
+                                    [step for step in range(combined_processor.n_sim)])
 
-        S2_over_time, strains, angle_over_time, biaxility_over_time = S2_to_gamma(results_time, shear_rate, 2000)
+        S2_over_time, strains, angle_over_time, biaxility_over_time = S2_to_gamma(
+            results_time, shear_rate, 2000)
 
         orientation_dict['S2_over_time'] = S2_over_time
         orientation_dict['strains'] = strains
@@ -845,25 +912,24 @@ if __name__ == "__main__":
         csvProcessor.exclude_initial_strain_cycle(param)
         avgCsv = csvProcessor.get_averages(shear_rate)
         fluctuationsCsv = csvProcessor.get_fluctuations(avgCsv)
-      
-        #export the data with pickle
+
+        # export the data with pickle
         averages = {**avgCsv,   **orientation_dict, **fluctuationsCsv}
-        # print("Averages keys: ", averages.keys())   
-        
+        # print("Averages keys: ", averages.keys())
+
         stress_prediction = compute_stress_orientation(averages)
-        exporter = DataExporter(ap, cof,I=param)
+        exporter = DataExporter(ap, cof, I=param)
         exporter.export_orientation_data(averages)
         # exporter.export_with_pickle(averages)
-        
 
     else:
-        #import the data with pickle
-        importer = DataExporter(ap, cof, simulation_type ,param)
+        # import the data with pickle
+        importer = DataExporter(ap, cof, simulation_type, param)
         averages, averages_dump = importer.import_with_pickle()
 
-        #plotter = DataPlotter(ap, cof, simulation_type ,param)
-        #plotter.plot_data(averages, averages_dump)
-        #plotter.plot_eulerian_velocities(averages)
+        # plotter = DataPlotter(ap, cof, simulation_type ,param)
+        # plotter.plot_data(averages, averages_dump)
+        # plotter.plot_eulerian_velocities(averages)
 
         # plot ellipsois in 3d
         plotter.plot_ellipsoids(500, averages, averages_dump)
