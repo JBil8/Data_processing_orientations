@@ -2,22 +2,11 @@
 
 # Path to the directory containing the raw simulation data
 # (directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/)
-RAW_DIR="/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/"
-# cluster: RAW_DIR="/scratch/bilotto/simulations_simple_shear_orientation_N4000_long_box"
+RAW_DIR="path_ro_raw_simulation_data"
 
 # # Define the parameters
-# aspectRatios=(1.0 1.2 1.5 1.8 2.0 2.5 3.0)
 cofs=(0.0 0.001 0.01 0.1 0.4 1.0 10.0)
-# # aspectRatios=(0.33 0.40 0.50 0.56 0.67 0.83)
-# # aspectRatios=(3.0)
-# # cofs=(0.0)
-# Is=(0.1 0.046 0.022 0.01 0.0046 0.0022 0.001)
-
-# aspectRatios=(0.33 0.4 0.5 0.56 0.67 0.83 1.0)
 aspectRatios=(1.2 1.5 1.8 2.0 2.5 3.0 3.5 4.0 4.5 5.0 5.5 6.0 7.0)
-
-# inertialNumbers=(0.001)
-# cofs=(0.0)
 Is=(0.1)
 s=50
 aspectRatios=(8.0)

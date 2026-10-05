@@ -2,11 +2,11 @@
 
 # --- Paths to edit per machine -------------------------------------------
 # Full path to the (patched) LIGGGHTS executable
-executable="/home/jacopo/opt/LIGGGHTS-PUBLIC/src/liggghts"
+executable="path_to_exectutable"
 # Input script (expected in this directory)
 input_script="in.simple_shear_le_orientation"
 # Root directory where the run directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/ are created
-run_root="/scratch/bilotto/simulations_simple_shear_orientation_N4000_long_box"
+run_root="path_to_scratch"
 # --------------------------------------------------------------------------
 
 # Directory containing this script and the input scripts
@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 radius=1
 density=1000
 YoungMod="5.0e6"
-# aspectRatios=(1.2 1.5 1.8 2.0 2.5 3.0 3.5 4.0 4.5 5.0 5.5 6.0 7.0 8.0)
+aspectRatios=(1.2 1.5 1.8 2.0 2.5 3.0 3.5 4.0 4.5 5.0 5.5 6.0 7.0 8.0)
 inertialNumbers=(0.1)
 cofs=(0.0 0.001 0.01 0.1 0.4 1.0 10.0 100.0)
 # Define the maximum number of parallel tasks
@@ -46,9 +46,7 @@ for COF in "${cofs[@]}"; do
             echo "#SBATCH --ntasks=${ntasks}" >> "$job_script"
             echo "#SBATCH --cpus-per-task=1" >> "$job_script"
             echo "#SBATCH --mem=6G" >> "$job_script"
-            echo "#SBATCH --time=3-00:00:00" >> "$job_script"
-            echo "#SBATCH --mail-type=BEGIN,END,FAIL" >> "$job_script"
-            echo "#SBATCH --mail-user=jacopo.bilotto@epfl.ch" >> "$job_script"
+            echo "#SBATCH --time=1-00:00:00" >> "$job_script"
             
             # Navigate to the correct folder inside the Slurm allocation
             echo "cd $target_dir" >> "$job_script"
