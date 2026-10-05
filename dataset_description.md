@@ -21,7 +21,7 @@ the reduced simulation units of the underlying DEM runs.
 | `output_data_N4000/` | 4 pickles — 4000 particles |
 | `output_data_rods/` | 27 pickles — rod-like particles |
 | `output_data_volume/` | 8 pickles — volume-controlled (fixed packing) instead of pressure-controlled |
-| `output_data_hertz/U_and_rmse_self_consistent.pkl` (and `_rods`/`_volume` variants) | stacked self-consistent Maier–Saupe fit results |
+
 
 All `orientation_simple_shear_*.pkl` files across all directories share the
 identical format (48 keys, documented in section 2). The variant directories
@@ -52,8 +52,6 @@ Coverage:
 | `output_data_rods/` | 2.0, 3.3, 5.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 0.7, 1.0, 10.0, 100.0 | 0.1 |
 | `output_data_volume/` | 5.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 1.0, 10.0, 100.0 | 0.1 |
 
-Not every parameter combination is present in `output_data_hertz/`; a
-combination is missing if the simulation or the fit did not converge.
 
 ## 2. `orientation_simple_shear_*.pkl` (48 keys, identical everywhere)
 
@@ -63,7 +61,7 @@ One pickle per run. Scalars unless noted.
 | Key | Meaning |
 |---|---|
 | `inertialNumber`, `shear_rate` | Inertial number; imposed shear rate `gamma_dot` |
-| `phi`, `phi_fluct` | packing fraction; its per-timestep fluctuation |
+| `phi`, `phi_fluct` | average packing fraction; its per-timestep fluctuation |
 | `press`, `press_fluct` | pressure; fluctuation |
 | `p_yy`, `p_xy`, `p_yy_fluct`, `p_xy_fluct` | normal / shear stress components; fluctuations |
 | `Nx_diff`, `Nz_diff`, `..._fluct` | flow-alignment (nematic) differences along x and z; fluctuations |
@@ -92,21 +90,8 @@ One pickle per run. Scalars unless noted.
 | `S2_over_time`, `strains` (3001,) | order parameter vs accumulated strain |
 | `angle_over_time`, `biaxility_over_time` (3001,) | director angle / biaxiality vs accumulated strain |
 
-## 3. `U_and_rmse_self_consistent*.pkl`
 
-Stacked results of the self-consistent Maier–Saupe analysis (axes ordered as
-written by `maier_3d.ipynb`):
-
-| File | Shape | Axes |
-|---|---|---|
-| `output_data_hertz/U_and_rmse_self_consistent.pkl`, `output_data_mono/…` | (8, 1, 14) | `(i_cof, i_I, i_ap)` — 8 friction coefficients × 1 Inertial number × 14 aspect ratios |
-| `output_data_rods/U_and_rmse_self_consistent_rods.pkl` | (3, 1, 3) | 3 friction coefficients × 1 Inertial number × 3 aspect ratios |
-| `output_data_volume/U_and_rmse_self_consistent_volume.pkl` | (8, 1, 1) | 8 friction coefficients × 1 Inertial number × 1 aspect ratio |
-
-Keys: `U1_self_consistents`, `U2_self_consistents` (fitted potential
-strengths), `rmse_self_consistents` (fit residuals).
-
-## 4. Loading the data
+## 3. Loading the data
 
 ```python
 import pickle
@@ -119,7 +104,7 @@ odf_angle, odf_p = d["bin_centers"], d["f_data"]
 The notebooks in the repository show the full reading logic
 (`read_pdf_theta` in `maier_3d.ipynb`).
 
-## 5. Regeneration
+## 4. Regeneration
 
 Raw simulation data are not included in this dataset. The pickles are
 regenerated from raw Liggghts output with:
@@ -133,7 +118,7 @@ The Liggghts input scripts, the SLURM runner, and the source patch needed to
 generate the raw data are part of the code repository
 (`simulation_runners/`).
 
-## 6. License and citation
+## 5. License and citation
 
 - Dataset: Creative Commons Attribution 4.0 (CC-BY-4.0).
 - Code: GPL-3.0 — <https://github.com/JBil8/data_processing_orientations>.
