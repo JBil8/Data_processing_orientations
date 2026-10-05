@@ -22,6 +22,6 @@ keywords:
   - nematic order
   - simple shear
 related-identifiers:
-  - identifier: "10.5281/zenodo.YYYYYYY"
+  - identifier: "10.5281/zenodo.23163285"
     relation: "isSupplementedBy"
     description: "Processed simulation datasets"
