@@ -1,27 +1,17 @@
-import sys
 import numpy as np
-import pickle
-import vtk
 import argparse
 import matplotlib.pyplot as plt
-# from scipy.spatial.transform import Rotation as R
 import os
-import re
 import multiprocessing
-import time as tm
 from ProcessorVtk import ProcessorVtk
 from ProcessorDump import ProcessorDump
 from CombinedProcessor import CombinedProcessor
-from DataPlotter import DataPlotter
 from ReaderVtk import ReaderVtk
 from ReaderDump import ReaderDump
 from DataExporter import DataExporter
 from ProcessorCsv import ProcessorCsv
-from ProcessorDat import ProcessorDat
-from histogram_utils import *
 from scipy.stats import binned_statistic
 import scipy.optimize as spo
-import functools
 
 
 def parse_argument(value):
@@ -126,10 +116,10 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     bin_centers = 0.5 * (bins_theta[:-1] + bins_theta[1:])
     bins_theta = np.linspace(-np.pi/2, np.pi/2, n_bins_theta + 1)
 
-    # 2. Extract the omega_z values
+    # Extract the omega_z values
     omega_z = omegas[:, 2]
 
-    # 3. Use binned_statistic to calculate mean, std, and count in one pass
+    # Use binned_statistic to calculate mean, std, and count in one pass
     #    We request three statistics for each bin.
     mean_stat, _, _ = binned_statistic(
         theta_angles, omega_z, statistic='mean', bins=bins_theta)
@@ -138,10 +128,10 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     count_stat, _, _ = binned_statistic(
         theta_angles, omega_z, statistic='count', bins=bins_theta)
 
-    # 4. Calculate the standard error of the mean, handling bins with zero counts
+    # Calculate the standard error of the mean, handling bins with zero counts
     omega_std_per_bin = std_stat / np.sqrt(count_stat)
 
-    # 5. Clean up the results for empty bins (replace nan with 0)
+    # Clean up the results for empty bins (replace nan with 0)
     omega_per_bin = np.nan_to_num(mean_stat, nan=0.0)
     omega_std_per_bin = np.nan_to_num(omega_std_per_bin, nan=0.0)
 
@@ -196,10 +186,6 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
         screening_factor_z = 0
     else:
         screening_factor_z = covariance_z / variance_jeffrey_z
-
-    # if screening_factor < 0:
-    #     print(f"Warning: Negative screening factor, setting to zero. {screening_factor}")
-        # screening_factor = 0
 
     print(
         f"Screening factor: {screening_factor}, Screening factor z: {screening_factor_z}, Ratio at director angle: {ratio}")
@@ -309,7 +295,7 @@ def process_orientations(stacked_orientations):
     bin_centers = 0.5 * (edges[:-1] + edges[1:])  # θ_i
     d_theta = edges[1] - edges[0]  # Δθ_i
 
-    # 6) Fit only U, holding S fixed
+    # Fit only U, holding S fixed
     def model(thetas, U): return fit_equilibrium_ODF(thetas, S2_scalar, U)
 
     initial_guess_U = 20
@@ -350,19 +336,11 @@ def process_orientations(stacked_orientations):
         stacked_orientations[:, 1], stacked_orientations[:, 0])
     angle_xy_plane = np.where(
         angle_xy_plane < 0, angle_xy_plane + np.pi, angle_xy_plane)
-    angle_temp = np.zeros_like(angle_xy_plane)
-    nb = len(angle_xy_plane)
-    if angle_temp % 2 == 0:
-        angle_temp[:nb//2] = angle_xy_plane[nb//2:]
-        angle_temp[nb//2:] = angle_xy_plane[:nb//2]
-        angle_xy_plane = angle_temp
-    else:
-        angle_temp[:nb//2+1] = angle_xy_plane[nb//2:]
-        angle_temp[nb//2+1:] = angle_xy_plane[:nb//2]
-        angle_xy_plane = angle_temp
+    angle_xy_plane = np.where(angle_xy_plane > np.pi/2,
+                              angle_xy_plane - np.pi, angle_xy_plane)
 
     plt.figure(figsize=(6, 6))
-    plt.hist(angle_xy_plane, bins=100, density=True, alpha=0.7, color='blue')
+    plt.hist(angle_xy_plane, bins=500, density=True, alpha=0.7, color='blue')
     plt.axvline(x=theta_d, color='red', linestyle='--', label='Director angle')
     plt.xlabel(r'$\phi$ [rad]')
     plt.ylabel('Probability Density')
@@ -374,8 +352,6 @@ def process_orientations(stacked_orientations):
 
     times, oacf, D_r, Pe, tau_r, A_infty = measure_rotational_diffusion(
         stacked_orientations, 2000, shear_rate, n_starting_points=40, max_lag=None)
-
-    # print(f"Rotational diffusion coefficient D_r: {D_r:.3f}, Peclet number Pe: {Pe:.3f}")
 
     # build a dictionary with the results
     results = {}
@@ -472,7 +448,6 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
         0, n_frames - max_lag - 1, n_starting_points, dtype=int)
 
     oacf = np.zeros(max_lag)
-    msad = np.zeros(max_lag)  # Mean square angular displacement
     for start in start_indices:
         u0 = orientations[start]  # shape (n_particles, 3)
         for lag in range(max_lag):
@@ -481,13 +456,7 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
             dot = np.einsum('ij,ij->i', u0, u_t)
             oacf[lag] += (dot**2).mean()
 
-            # Ensure valid input for arccos
-            delta_angle = np.arccos(np.clip(dot, -1.0, 1.0))
-            # Mean square angular displacement
-            msad[lag] += (delta_angle**2).mean()
-
     oacf /= len(start_indices)
-    msad /= len(start_indices)  # Average over starting points
 
     times = np.arange(max_lag) * delta_t
 
@@ -497,18 +466,12 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
         """
         return A_infty + (1 - A_infty) * np.exp(-t / tau_r)
 
-    def short_time_decay(t, D_r):
-        return 2 * D_r * t
-
     # perform the fit to exrtract A_infty and tau_r
     initial_guess = [0, 1]  # Initial guess for A_infty and tau_r
     try:
         popt, _ = spo.curve_fit(long_time_decay, times,
                                 oacf, p0=initial_guess, maxfev=10000)
         A_infty, tau_r = popt
-
-        popt_short, _ = spo.curve_fit(
-            short_time_decay, times, msad, p0=[0.1], maxfev=10000)
 
     except RuntimeError as e:
         print(f"Fit failed: {e}")
@@ -517,26 +480,7 @@ def measure_rotational_diffusion(stacked_orientations, n_particles, shear_rate, 
     D_r = (1 - A_infty) / (4 * tau_r)  # Rotational diffusion coefficient
     Pe = shear_rate / D_r  # Peclet number
 
-    D_r_short = popt_short[0]
-    Pe_short = shear_rate / D_r_short
-    # plt.figure(figsize=(4, 3))
-    # plt.plot(times, oacf, 'o', markersize=4, label='OACF of P2(u · u\')')
-    # plt.plot(times, long_time_decay(times, A_infty, tau_r), '--', label=f'Fit: A_infty={A_infty:.2f}, tau_r={tau_r:.2f}')
-    # # plt.plot(times, short_time_decay(times, popt_short[0]), '--', label=f'Short time fit: A={popt_short[0]:.2f}')
-    # # plt.plot(times, msad, 'x', markersize=4, label='Mean square angular displacement')
-    # plt.xlabel('$t$ [s]')
-    # plt.ylabel('$ \\langle ( \\mathbf{{u}}(t) \\cdot \\mathbf{{u}}(0) )^2 \\rangle $')
-    # plt.legend()
-    # plt.savefig(f"ap_{ap}_cof_{cof}_I_{param}_rotational_diffusion_fit.png", dpi= 300, bbox_inches='tight')
-    # # plt.show()
-
     return times, oacf, D_r, Pe, tau_r, A_infty
-
-
-def avg_log_likelihood(theta_data, f_fit):
-    f_vals = f_fit(theta_data)
-    f_vals[f_vals <= 0] = 1e-10  # Avoid log(0)
-    return np.mean(np.log(f_vals))
 
 
 def P2(x):
@@ -601,131 +545,16 @@ def compute_polar_pdf(theta_array, n_bins=50):
     return pdf, edges
 
 
-def compute_autocorrelation_function(property):
-    """
-    Compute the autocorrelation function as a function of strain for the y-velocity component.
+def process_results(results):
+    """Extract the orientation distributions from the per-step results."""
 
-    Parameters:
-        property (numpy.ndarray): A 2D array of shape (n_particles, n_strains) representing the particles' fluctuation of the physical property.
+    directors = np.concatenate([result['directors'] for result in results])
+    omegas = np.concatenate([result['omegas'] for result in results])
 
-    Returns:
-        numpy.ndarray: The normalized autocorrelation function as a function of strain (averaged over particles and strain steps).
-    """
-    # Extract dimensions
-    n_particles, n_strains = property.shape
-
-    # Compute the FFT along the strain axis (axis=1)
-    # Zero-padding to 2*n_strains for circular convolution
-    fft_property = np.fft.fft(property, n=2*n_strains, axis=1)
-    power_spectrum = fft_property * \
-        np.conjugate(fft_property)  # Compute the power spectrum
-
-    # Compute the inverse FFT to get the autocorrelation along the strain axis
-    # First n_strains terms only
-    autocorr = np.fft.ifft(power_spectrum, axis=1).real[:, :n_strains]
-
-    # Average over particles to get a single autocorrelation for each particle
-    # Normalize by the number of strain steps (scaling factor)
-    autocorr_per_particle = autocorr / n_strains
-
-    # Average over particles to get the final autocorrelation function
-    avg_autocorr = np.mean(autocorr_per_particle, axis=0)
-
-    # Compute the global mean squared fluctuation (over particles and strain steps)
-    mean_squared_fluctuations = np.mean(property**2)
-
-    # Normalize the autocorrelation function
-    avg_autocorr /= mean_squared_fluctuations
-
-    return avg_autocorr
-
-
-def compute_stress_orientation(dictionary):
-    """
-    Compute the stress from flow and steric interaction as DE theory
-    """
-
-    S2 = dictionary['nematic_tensor']
-    S4 = dictionary['S4']
-    phi = dictionary['phi']
-    U = dictionary['U_fitted']
-    shear_rate = dictionary['shear_rate']
-    pressure = dictionary['p_yy']
-
-    correction_density = phi * (1 - 3/4 * phi) / (1-phi)**2
-    U_tilde = 3/4 * U * correction_density
-
-    # create the strain rate tensor from simple shear
-    strain_rate_tensor = 1/2 * np.array([[0, shear_rate, 0],
-                                         [shear_rate, 0, 0],
-                                         [0, 0, 0]])
-
-    T1 = np.einsum('ijkl, kl->ij', S4, strain_rate_tensor)  # 2nd order tensor
-    T2 = np.einsum('ijkl, kl->ij', S4, S2)
-    T3 = S2@S2
-
-    # DE theory stress tensor missing constant
-    total_stress = 2*U_tilde * (T3 + phi*S2/3 - T2)
-
-    const_fit = - pressure / total_stress[1, 1]
-
-    stress_tensor = const_fit * total_stress
-
-    return stress_tensor, const_fit
-
-
-def process_results(results, bins_global=144, bins_local=10):
-    """Process the results to extract and average histograms."""
-
-    # Define the number of bins for each histogram type
-    bins_config = {
-        'global_normal_force_hist': bins_global,
-        'global_tangential_force_hist': bins_global,
-        'local_normal_force_hist_cp': bins_local,
-        'local_tangential_force_hist_cp': bins_local,
-        'global_normal_force_hist_cp': bins_global,
-        'global_tangential_force_hist_cp': bins_global,
-        'contacts_hist_cont_point_global': bins_global,
-        'contacts_hist_cont_point_local': bins_local,
-        'contacts_hist_global_normal': bins_global,
-        'contacts_hist_global_tangential': bins_global,
-        'power_dissipation_normal': bins_local,
-        'power_dissipation_tangential': bins_local,
-        'bin_counts_power': bins_local,
-        'normal_force_hist_mixed': bins_local**2,
-        'tangential_force_hist_mixed': bins_local**2,
-        'counts_mixed': bins_local**2
-    }
-
-    # Initialize sums for each histogram type
-    histogram_sums = {key: np.zeros(bins) for key, bins in bins_config.items()}
-
-    # Extract averages and sum histograms
-    averages = {}
-    distributions = {}
-
-    # [print(r['c_delta_vy']) for r in results]
-
-    for key in results[0].keys():
-        # print(key)
-        if key in histogram_sums:
-            histogram_sums[key] = compute_histogram_sum(results, key)
-        elif key in ['trackedGrainsOrientation', 'trackedGrainsPosition', 'thetax', 'thetaz', 'directors', 'omegas']:
-            distributions[key] = np.concatenate(
-                [result[key] for result in results])
-        # stack the fluctuations of the velocity and angular velocity to compute the temporal autocorrelation
-        elif key in ['vy_velocity', 'omegaz_velocity']:
-            distributions[key] = np.stack(
-                [result[key] for result in results], axis=1)
-        else:
-            # compute the average of the scalar values
-            averages[key] = np.mean([result[key]
-                                    for result in results], axis=0)
-
-    results = process_orientations(distributions['directors'])
+    results = process_orientations(directors)
 
     screening_jeffrey, error_screening, ave_omega, bins, omega_bins, std_omega_bins = perform_block_analysis(
-        distributions['directors'], distributions['omegas'], 2000, n_sim, shear_rate, ap, results['theta_d'])
+        directors, omegas, 2000, n_sim, shear_rate, ap, results['theta_d'])
 
     results['screening_jeffrey'] = screening_jeffrey
     results['error_screening'] = error_screening
@@ -756,8 +585,7 @@ if __name__ == "__main__":
                         help='number of processes to use in parallel', default=8)
     parser.add_argument('-d', '--input_dir', type=str,
                         help='path to the directory containing the raw simulation data '
-                             '(directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/)',
-                        default='/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/')
+                             '(directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/)')
     args = parser.parse_args()
 
     # parsing command line arguments
@@ -772,9 +600,6 @@ if __name__ == "__main__":
     if full_postprocess == True:
 
         # alternative cluster paths:
-        # global_path = "/scratch/bilotto/simulations_simple_shear_hertz_dt_0.15/"
-        # global_path = "/work/lsms/jbilotto/simulations_simple_shear_orientations/"
-
         plt.ioff()
         # initialize the vtk reader
         data_read = ReaderVtk(cof, ap, I=param, pressure=pressure)
@@ -784,8 +609,6 @@ if __name__ == "__main__":
         df_csv, shear_rate = data_read.read_csv_file()
         dt_hertz = time_step_used(shear_rate, ap, 1.5*0.08)
 
-        df_dat = data_read.read_dat_file()
-        particles_volume = data_read.get_particles_volume()
         # intialize the dump reader
         data_dump = ReaderDump(cof, ap, I=param, pressure=pressure)
         data_dump.read_data(global_path, 'simple_shear_contact_data_')
@@ -828,9 +651,7 @@ if __name__ == "__main__":
 
         # export the data with pickle
         averages = {**avgCsv,   **orientation_dict, **fluctuationsCsv}
-        # print("Averages keys: ", averages.keys())
 
-        stress_prediction = compute_stress_orientation(averages)
         exporter = DataExporter(ap, cof, I=param)
         exporter.export_orientation_data(averages)
         # exporter.export_with_pickle(averages)
