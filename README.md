@@ -84,7 +84,7 @@ The structure of the exported pickles (keys, shapes, normalisations) is
 documented in `dataset_description.md`.
 
 The processed datasets used in the publication are available on Zenodo
-(DOI: 10.5281/zenodo.XXXXXXX — to be inserted upon publication).
+(DOI: 10.5281/zenodo.23163285).
 
 Legacy notebooks and exploratory scripts are preserved on the
 [`archive/legacy-main`](../../tree/archive/legacy-main) branch.

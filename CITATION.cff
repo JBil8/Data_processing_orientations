@@ -6,7 +6,7 @@ authors:
     given-names: "Jacopo"
     orcid: "https://orcid.org/0009-0009-6302-9111"
 version: 1.0.0
-doi: 10.5281/zenodo.XXXXXXX
+doi: 10.5281/zenodo.23163285
 date-released: "2026-10-02"
 license: GPL-3.0
 repository-code: "https://github.com/JBil8/data_processing_orientations"
