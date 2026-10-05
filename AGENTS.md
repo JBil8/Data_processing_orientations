@@ -55,13 +55,16 @@ No tests, no lint/CI — verification is running the script or notebook cells.
 
 ## Notebooks
 - `main_orientations.py` + `maier_3d.ipynb` stay in the repo root;
-  `Jeffrey_orbits.ipynb` and `abel_transform_raw_data.ipynb` are in `notebooks/`
-  (outputs stripped). Notebooks import no local modules.
-- `Jeffrey_orbits.ipynb` loads old-named pkls from relative `data/output_data_final/`;
-  `maier_3d.ipynb` loads from `data/output_data_hertz/` and the reference CSVs
-  from `data/`. Both pkl families ship in the Zenodo dataset
-  (DOI placeholders in `README.md`/`CITATION.cff`); the pkl key/shape
-  reference is `dataset_description.md`.
+  `abel_transform_raw_data.ipynb` is in `notebooks/` (outputs stripped).
+  `Jeffrey_orbits.ipynb` was removed — it lives on the `archive/legacy-main`
+  branch. Notebooks import no local modules.
+- `maier_3d.ipynb` loads from `data/output_data_hertz/` and the reference
+  CSVs from `data/`. The Zenodo dataset contains `output_data_hertz/` plus
+  the supplementary variant dirs (`output_data_e0.9`, `output_data_high_kappa`,
+  `output_data_mono`, `output_data_N4000`, `output_data_rods`,
+  `output_data_volume`); the pkl key/shape reference is
+  `dataset_description.md`. `data/output_data_final/` is legacy data from the
+  removed notebook — local only, not in the deposit.
 
 ## Known bugs / traps
 - Fixed and merged on `main`: `DataExporter.import_with_pickle()` `'wb'` mode,

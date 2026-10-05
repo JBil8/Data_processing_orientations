@@ -1,8 +1,7 @@
 # Data_processing_orientations
 
 Post-processing code for the orientation statistics of non-spherical granular
-particles (ellipsoids and rods) under simple shear, extracted from
-LAMMPS/Liggghts DEM simulations.
+particles (ellipsoids and rods) under simple shear, extracted from Liggghts DEM simulations.
 
 The pipeline computes particle orientation distributions, nematic order
 parameter (Maier–Saupe / ODF fits), Jeffrey-orbit comparison, rotational
@@ -25,7 +24,6 @@ diffusion, stress–orientation coupling, and related time-series statistics.
 │   ├── DataPlotter.py, histogram_utils.py
 │   └── script_vtk_to_binary.py, rename_binary_vtk.sh  # raw-data utilities
 ├── notebooks/
-│   ├── Jeffrey_orbits.ipynb         # Jeffrey-orbit comparison, ODF fits
 │   └── abel_transform_raw_data.ipynb
 ├── simulation_runners/              # LIGGGHTS input scripts, SLURM runner, source patch
 │   ├── in.simple_shear_le_orientation

@@ -2,7 +2,7 @@
 
 Processed outputs of the post-processing pipeline in
 [Data_processing_orientations](https://github.com/JBil8/data_processing_orientations)
-(v1.0.0) applied to LAMMPS/Liggghts DEM simulations of monodisperse granular
+(v1.0.0) applied to Liggghts DEM simulations of monodisperse granular
 ellipsoids under steady simple shear. The dataset contains the aggregated
 per-run results (Python `pickle` files) used to produce all figures of the
 associated publication.
@@ -14,34 +14,48 @@ the reduced simulation units of the underlying DEM runs.
 
 | Path | Content |
 |---|---|
-| `output_data_final/` | 637 pickles from the older pipeline, `simple_shear_ap{a}_cof_{c}_I_{I}.pkl` — read by `Jeffrey_orbits.ipynb` |
-| `output_data_hertz/` | 127 pickles from the current (Hertzian-contact) pipeline, `orientation_simple_shear_ap{a}_cof_{c}_I_{I}.pkl` — read by `maier_3d.ipynb` |
-| `output_data_hertz/U_and_rmse_self_consistent.pkl` | stacked self-consistent Maier–Saupe fit results |
+| `output_data_hertz/` | main dataset: 127 pickles, `orientation_simple_shear_ap{a}_cof_{c}_I_{I}.pkl` |
+| `output_data_e0.9/` | 4 pickles — restitution coefficient 0.9 |
+| `output_data_high_kappa/` | 4 pickles — higher stiffness number, kappa = 4.6e5 |
+| `output_data_mono/` | 112 pickles — monodisperse particles |
+| `output_data_N4000/` | 4 pickles — 4000 particles |
+| `output_data_rods/` | 27 pickles — rod-like particles |
+| `output_data_volume/` | 8 pickles — volume-controlled (fixed packing) instead of pressure-controlled |
+| `output_data_hertz/U_and_rmse_self_consistent.pkl` (and `_rods`/`_volume` variants) | stacked self-consistent Maier–Saupe fit results |
+
+All `orientation_simple_shear_*.pkl` files across all directories share the
+identical format (48 keys, documented in section 2). The variant directories
+are subsets covering a reduced parameter range, with one control parameter of
+the simulation changed (see table below); `output_data_hertz/` contains the
+full sweep. The pickles are read by `maier_3d.ipynb` in the code repository.
 
 ### File naming and parameter coverage
 
-Each file name encodes the three control parameters of the simulation it
+Each file name encodes the control parameters of the simulation it
 aggregates (the raw data lived in directories named
 `alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/`):
 
-- **`ap`** — particle aspect ratio (long/small semi-axis). In
-  `output_data_final/` values `ap < 1` denote oblate/flattened ellipsoids,
-  recorded as the small/large ratio (equivalent aspect ratio `1/ap`); in
-  `output_data_hertz/` all values are `> 1` (prolate ellipsoids).
-- **`cof`** — inter-particle coefficient of friction `mu_p`.
+- **`ap`** — particle aspect ratio (long/small semi-axis), `> 1`
+  (prolate ellipsoids; in `output_data_rods/` rod-like particles).
+- **`cof`** — inter-particle coefficient of friction.
 - **`I`** — Inertial number.
 
 Coverage:
 
-| Family | `ap` | `cof` | `I` |
+| Directory | `ap` | `cof` | `I` |
 |---|---|---|---|
-| `output_data_final/` | 0.33, 0.4, 0.5, 0.56, 0.67, 0.83, 1.0, 1.2, 1.5, 1.8, 2.0, 2.5, 3.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 1.0, 10.0 | 0.001, 0.0022, 0.0046, 0.01, 0.022, 0.046, 0.1 |
-| `output_data_hertz/` | 1.2 – 9.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 1.0, 10.0, 100.0 | 0.1 |
+| `output_data_hertz/` | 1.2, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 7.0, 8.0, 9.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 1.0, 10.0, 100.0 | 0.1 (119 runs), 0.01 (8 runs) |
+| `output_data_e0.9/` | 5.0 | 0.0, 0.01, 0.4, 10.0 | 0.1 |
+| `output_data_high_kappa/` | 5.0 | 0.0, 0.01, 0.4, 10.0 | 0.1 |
+| `output_data_mono/` | 1.2 – 8.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 1.0, 10.0, 100.0 | 0.1 |
+| `output_data_N4000/` | 5.0 | 0.0, 0.01, 0.4, 10.0 | 0.1 |
+| `output_data_rods/` | 2.0, 3.3, 5.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 0.7, 1.0, 10.0, 100.0 | 0.1 |
+| `output_data_volume/` | 5.0 | 0.0, 0.001, 0.01, 0.1, 0.4, 1.0, 10.0, 100.0 | 0.1 |
 
-Not every parameter combination is present; a combination is missing if the
-simulation or the fit did not converge.
+Not every parameter combination is present in `output_data_hertz/`; a
+combination is missing if the simulation or the fit did not converge.
 
-## 2. `output_data_hertz/orientation_simple_shear_*.pkl` (48 keys)
+## 2. `orientation_simple_shear_*.pkl` (48 keys, identical everywhere)
 
 One pickle per run. Scalars unless noted.
 
@@ -78,99 +92,48 @@ One pickle per run. Scalars unless noted.
 | `S2_over_time`, `strains` (3001,) | order parameter vs accumulated strain |
 | `angle_over_time`, `biaxility_over_time` (3001,) | director angle / biaxiality vs accumulated strain |
 
-## 3. `output_data_final/simple_shear_*.pkl` (older pipeline)
-
-One pickle per run; key availability varies slightly between files (a few
-keys, e.g. `D_rot` or `auto_corr`, are `None`/absent for runs with
-insufficient statistics).
-
-### Orientation / dynamics
-| Key | Meaning |
-|---|---|
-| `pdf_thetax`, `pdf_thetaz` (180, 2) | column 0 = angle (deg), column 1 = probability density of the in-plane tilt `theta_x` / of `theta_z` — read by `Jeffrey_orbits.ipynb` |
-| `percent_aligned`, `S2` | fraction of aligned particles; uniaxial order parameter |
-| `Omega_x`, `Omega_y`, `Omega_z` | mean angular velocity components (raw, not normalised: `Omega_z/gamma_dot ≈ -0.5`) |
-| `omega_fluctuations` (3,), `vx/vy/vz_fluctuations` | fluctuations of angular / linear velocities |
-| `D_rot` | rotational diffusion coefficient |
-| `auto_corr` (100,), `strain` (100,) | orientation autocorrelation vs accumulated strain |
-| `thetax_mean`, `thetaz_mean` | mean tilt angles |
-
-### Micro-macro quantities
-| Key | Meaning |
-|---|---|
-| `stress_contacts` (3,3), `fabric` (3,3) | contact stress tensor; contact fabric tensor |
-| `Z`, `percent_sliding` | coordination number; fraction of sliding contacts |
-| `tke`, `rke` | total kinetic energy (translational/rotational) |
-| `c_delta_vy` (18,), `c_r_values` (18,) | velocity correlation vs pair separation |
-| `box_x_length`, `box_y_length`, `box_z_length` | simulation box dimensions |
-| `muI_dissipation`, `ratio_diss_measurement`, `total_normal_dissipation`, `total_tangential_dissipation` | frictional dissipation measures |
-| `area_adjustment_ellipsoid` (10,), `total_area` | ellipsoid cross-section correction for contact statistics |
-
-### Chunk profiles (8 spatial bins)
-From LAMMPS chunk output (reader columns: `timestep, bin_index, coord, Ncount,
-vx, vy, vz, c_omegaz, density_mass, v_pxx_loc, v_pyy_loc, v_pzz_loc,
-v_pxy_loc`), time-averaged over the steady state; `_avg` = time mean,
-`_std_dev` = time standard deviation, per bin:
-
-| Key | Meaning |
-|---|---|
-| `bins` (8,) | bin coordinates |
-| `vx_avg/_std_dev`, `vy_...`, `vz_...` (8,) | velocity profile |
-| `c_omegaz_avg/_std_dev` (8,) | mean angular velocity z-component profile |
-| `coord_avg/_std_dev`, `Ncount_avg/_std_dev` (8,) | coordination number; contacts per bin |
-| `density_mass_avg/_std_dev` (8,) | mass density profile |
-| `v_pxx_loc_avg/_std_dev`, `v_pyy_...`, `v_pzz_...`, `v_pxy_...` (8,) | local stress components |
-
-### Force/contact histograms
-| Key | Meaning |
-|---|---|
-| `contacts_hist_global_normal/tangential` (144,), `contacts_hist_cont_point_global` (144,) | global contact-force histograms (144 bins) |
-| `global_normal_force_hist`, `global_tangential_force_hist` (144,) | force histograms weighted by force |
-| `contacts_hist_cont_point_local` (10,), `local_normal_force_hist_cp`, `local_tangential_force_hist_cp` (10,) | local (contact-point) histograms |
-| `bin_counts_power`, `power_dissipation_normal/tangential` (10,) | dissipated power per bin |
-| `normal_force_hist_mixed`, `tangential_force_hist_mixed` (100,) | mixed-branch force histograms |
-| `max_vx_diff` | maximum deviation of `vx` from linear profile |
-
-## 4. `output_data_hertz/U_and_rmse_self_consistent.pkl`
+## 3. `U_and_rmse_self_consistent*.pkl`
 
 Stacked results of the self-consistent Maier–Saupe analysis (axes ordered as
 written by `maier_3d.ipynb`):
 
-| Key | Shape | Axes |
+| File | Shape | Axes |
 |---|---|---|
-| `U1_self_consistents`, `U2_self_consistents`, `rmse_self_consistents` | (8, 1, 14) | `(i_cof, i_I, i_ap)` — 8 friction coefficients × 1 Inertial number × 14 aspect ratios |
+| `output_data_hertz/U_and_rmse_self_consistent.pkl`, `output_data_mono/…` | (8, 1, 14) | `(i_cof, i_I, i_ap)` — 8 friction coefficients × 1 Inertial number × 14 aspect ratios |
+| `output_data_rods/U_and_rmse_self_consistent_rods.pkl` | (3, 1, 3) | 3 friction coefficients × 1 Inertial number × 3 aspect ratios |
+| `output_data_volume/U_and_rmse_self_consistent_volume.pkl` | (8, 1, 1) | 8 friction coefficients × 1 Inertial number × 1 aspect ratio |
 
-## 5. Loading the data
+Keys: `U1_self_consistents`, `U2_self_consistents` (fitted potential
+strengths), `rmse_self_consistents` (fit residuals).
+
+## 4. Loading the data
 
 ```python
 import pickle
 
-# current pipeline (one file per run)
 with open("output_data_hertz/orientation_simple_shear_ap3.0_cof_1.0_I_0.1.pkl", "rb") as f:
     d = pickle.load(f)
 odf_angle, odf_p = d["bin_centers"], d["f_data"]
-
-# older pipeline (ODF used by Jeffrey_orbits.ipynb)
-with open("output_data_final/simple_shear_ap3.0_cof_10.0_I_0.1.pkl", "rb") as f:
-    d_old = pickle.load(f)
-theta, p_theta = d_old["pdf_thetax"][:, 0], d_old["pdf_thetax"][:, 1]
 ```
 
 The notebooks in the repository show the full reading logic
-(`read_pdf_theta` in `maier_3d.ipynb`, `read_pdf_thetax` in
-`Jeffrey_orbits.ipynb`).
+(`read_pdf_theta` in `maier_3d.ipynb`).
 
-## 6. Regeneration
+## 5. Regeneration
 
 Raw simulation data are not included in this dataset. The pickles are
-regenerated from raw LAMMPS/Liggghts output with:
+regenerated from raw Liggghts output with:
 
 ```bash
 python main_orientations.py -c 0.4 -a 3.0 -v 0.1 -s 50 -np 8
 # -> data/output_data_hertz/orientation_simple_shear_ap3.0_cof_0.4_I_0.1.pkl
 ```
 
-## 7. License and citation
+The Liggghts input scripts, the SLURM runner, and the source patch needed to
+generate the raw data are part of the code repository
+(`simulation_runners/`).
+
+## 6. License and citation
 
 - Dataset: Creative Commons Attribution 4.0 (CC-BY-4.0).
 - Code: GPL-3.0 — <https://github.com/JBil8/data_processing_orientations>.
