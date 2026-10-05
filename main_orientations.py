@@ -6,6 +6,7 @@ import sys
 import multiprocessing
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+os.makedirs('Figures', exist_ok=True)
 
 from ProcessorVtk import ProcessorVtk
 from ProcessorDump import ProcessorDump
@@ -157,7 +158,7 @@ def compute_jeffrey_screening(shear_rate, ap, orientations, omegas, theta_d):
     plt.xlabel(r'$\theta$ [rad]')
     plt.ylabel(r'$\omega_z / \dot{\gamma}$')
     plt.legend()
-    plt.savefig('ap_' + str(ap) + 'mup_' + str(cof) + '_I_' +
+    plt.savefig('Figures/ap_' + str(ap) + 'mup_' + str(cof) + '_I_' +
                 str(param) + '_jeffrey_comparison.png', bbox_inches='tight')
     plt.close()
 
@@ -332,7 +333,7 @@ def process_orientations(stacked_orientations):
     plt.ylim(0, 1.1 * np.max(f_data))
     plt.legend()
     # plt.tight_layout()
-    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' +
+    plt.savefig('Figures/ap_' + str(ap) + '_cof_' + str(cof) + '_I_' +
                 str(param) + '_orientation_ODF_fit.png', bbox_inches='tight')
     plt.close()
 
@@ -350,7 +351,7 @@ def process_orientations(stacked_orientations):
     plt.ylabel('Probability Density')
     plt.title('Azimuthal Angle Distribution in the XY Plane')
     plt.grid(alpha=0.3)
-    plt.savefig('ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) +
+    plt.savefig('Figures/ap_' + str(ap) + '_cof_' + str(cof) + '_I_' + str(param) +
                 '_azimuthal_angle_distribution.png', bbox_inches='tight')
     plt.close()
 
@@ -600,6 +601,12 @@ if __name__ == "__main__":
     pressure = args.pressure
     num_processes = args.num_processes
     global_path = args.input_dir
+
+    if full_postprocess and global_path is None:
+        parser.error(
+            '-d/--input_dir is required to run the full processing: path to the '
+            'directory containing the raw simulation data '
+            '(directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/)')
 
     if full_postprocess == True:
 

@@ -11,10 +11,12 @@ No tests, no lint/CI — verification is running the script or notebook cells.
 
 ## Running
 - Entry point: `main_orientations.py` from repo root (outputs go to relative
-  `data/output_data_hertz/`). Processing modules live in `src/` (added to
-  `sys.path` by the bootstrap at the top of `main_orientations.py`). Args:
-  `-c` cof, `-a` aspect ratio, `-v` Inertial number, `-s` pressure slot,
-  `-np` processes (default 8), `-d/--input_dir` path to raw data.
+  `data/output_data_hertz/`, plots to `Figures/`). Processing modules live in
+  `src/` (added to `sys.path` by the bootstrap at the top of
+  `main_orientations.py`). Args: `-c` cof, `-a` aspect ratio, `-v` Inertial
+  number, `-s` pressure slot, `-np` processes (default 8), `-d/--input_dir`
+  path to raw data — **required for the full processing** (guard exits with a
+  clear error if missing); `-p` works without it.
 - Full pipeline: `python main_orientations.py -c 0.4 -a 3.0 -v 0.1 -s 50 -np 8`
 - **Flags are inverted**: `-p` (`--postprocess`) *disables* full processing
   (`action='store_false'`) and loads the exported pickle instead; same for `-cw`.
@@ -23,8 +25,10 @@ No tests, no lint/CI — verification is running the script or notebook cells.
   paths commented in `main_orientations.py`). Data dirs follow
   `alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/`.
 - Parametric sweeps: `parallel_processing_sbatch_I.sh` submits SLURM jobs over
-  cof × ap × I (8 CPUs each, max 10 parallel). It passes `-s 50` (or `50*ap` if ap<1)
-  into the `pressure` arg — that slot holds the geometric parameter `s`, not a pressure.
+  cof × ap × I (8 CPUs each, max 10 parallel). Set the raw-data path in the
+  `RAW_DIR` variable at the top (passed as `-d "$RAW_DIR"`). It passes `-s 50`
+  (or `50*ap` if ap<1) into the `pressure` arg — that slot holds the
+  geometric parameter `s`, not a pressure.
 
 ## Pipeline
 - `ReaderVtk`/`ReaderDump` (base `DataReader`) → `ProcessorVtk` + `ProcessorDump`

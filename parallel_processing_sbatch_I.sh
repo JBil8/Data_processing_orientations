@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Path to the directory containing the raw simulation data
+# (directories alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/)
+RAW_DIR="/home/jacopo/Documents/phd_research/Liggghts_simulations/cluster_simulations/"
+# cluster: RAW_DIR="/scratch/bilotto/simulations_simple_shear_orientation_N4000_long_box"
+
 # # Define the parameters
 # aspectRatios=(1.0 1.2 1.5 1.8 2.0 2.5 3.0)
 cofs=(0.0 0.001 0.01 0.1 0.4 1.0 10.0)
@@ -47,7 +52,7 @@ do
 #SBATCH -t 0-10:00 #Request runtime of 1 hour
 ##SBATCH -o output_post_%j.txt #redirect output to output_post_JOBID.txt
 ##SBATCH -e error_post_%j.txt #redirect errors to error_post_JOBID.txt
-python main_orientations.py -c $cof -a $ap -v $I -s $s -np $cpus
+python main_orientations.py -c $cof -a $ap -v $I -s $s -np $cpus -d "$RAW_DIR"
 EOL
 
             # Limit the number of parallel tasks

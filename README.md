@@ -69,8 +69,13 @@ Arguments:
 | `-v` | Inertial number (or packing fraction, depending on simulation type) |
 | `-s` | geometric parameter `s` recorded in the raw-data directory name |
 | `-np` | number of parallel processes (default 8) |
-| `-d` | path to the raw simulation data (default: local LAMMPS output root) |
+| `-d` | path to the raw simulation data — **required for the full processing** |
 | `-p` | *disables* full processing and loads the exported pickle instead |
+
+Diagnostic plots are saved to `Figures/`. The post-processing sweep script
+`parallel_processing_sbatch_I.sh` submits SLURM jobs over
+friction × aspect ratio × Inertial number; set the raw-data directory in the
+`RAW_DIR` variable at the top of the script.
 
 The pipeline expects raw simulation directories named
 `alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/` containing the VTK snapshots, the
