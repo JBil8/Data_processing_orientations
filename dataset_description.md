@@ -1,7 +1,7 @@
 # Processed simulation datasets — description
 
 Processed outputs of the post-processing pipeline in
-[Data_processing_orientations](https://github.com/JBil8/Data_processin_orientations)
+[Data_processing_orientations](https://github.com/JBil8/data_processing_orientations)
 (v1.0.0) applied to LAMMPS/Liggghts DEM simulations of monodisperse granular
 ellipsoids under steady simple shear. The dataset contains the aggregated
 per-run results (Python `pickle` files) used to produce all figures of the
@@ -167,11 +167,11 @@ regenerated from raw LAMMPS/Liggghts output with:
 
 ```bash
 python main_orientations.py -c 0.4 -a 3.0 -v 0.1 -s 50 -np 8
-# -> output_data_hertz/orientation_simple_shear_ap3.0_cof_0.4_I_0.1.pkl
+# -> data/output_data_hertz/orientation_simple_shear_ap3.0_cof_0.4_I_0.1.pkl
 ```
 
 ## 7. License and citation
 
 - Dataset: Creative Commons Attribution 4.0 (CC-BY-4.0).
-- Code: GPL-3.0 — <https://github.com/JBil8/Data_processin_orientations>.
+- Code: GPL-3.0 — <https://github.com/JBil8/data_processing_orientations>.
 - Please cite both; see `CITATION.cff` in the code repository.

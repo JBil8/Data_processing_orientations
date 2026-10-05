@@ -11,8 +11,10 @@ No tests, no lint/CI — verification is running the script or notebook cells.
 
 ## Running
 - Entry point: `main_orientations.py` from repo root (outputs go to relative
-  `output_data_hertz/`). Args: `-c` cof, `-a` aspect ratio, `-v` Inertial number,
-  `-s` pressure slot, `-np` processes (default 8), `-d/--input_dir` path to raw data.
+  `data/output_data_hertz/`). Processing modules live in `src/` (added to
+  `sys.path` by the bootstrap at the top of `main_orientations.py`). Args:
+  `-c` cof, `-a` aspect ratio, `-v` Inertial number, `-s` pressure slot,
+  `-np` processes (default 8), `-d/--input_dir` path to raw data.
 - Full pipeline: `python main_orientations.py -c 0.4 -a 3.0 -v 0.1 -s 50 -np 8`
 - **Flags are inverted**: `-p` (`--postprocess`) *disables* full processing
   (`action='store_false'`) and loads the exported pickle instead; same for `-cw`.
@@ -28,28 +30,35 @@ No tests, no lint/CI — verification is running the script or notebook cells.
 - `ReaderVtk`/`ReaderDump` (base `DataReader`) → `ProcessorVtk` + `ProcessorDump`
   combined in `CombinedProcessor.process_single_step` → run via
   `multiprocessing.Pool` → aggregated by `process_results()` → exported by
-  `DataExporter` to `output_data_hertz/orientation_simple_shear_ap{ap}_cof_{cof}_I_{I}.pkl`.
-- `DataProcessor.py` is the tiny base class of all `Processor*` modules — do not delete it.
+  `DataExporter` to
+  `data/output_data_hertz/orientation_simple_shear_ap{ap}_cof_{cof}_I_{I}.pkl`.
+- All processing modules are in `src/` and import each other flatly
+  (`from DataProcessor import …`); `DataProcessor.py` is the tiny base class
+  of all `Processor*` modules — do not delete it.
 
 ## Notebooks
-- Only three remain: `Jeffrey_orbits.ipynb`, `maier_3d.ipynb`,
-  `abel_transform_raw_data.ipynb` (outputs stripped).
-- `Jeffrey_orbits.ipynb` loads old-named pkls from relative `output_data_final/`;
-  `maier_3d.ipynb` loads from `output_data_hertz/`. Both pkl families ship in the
-  Zenodo dataset (DOI placeholders in `README.md`/`CITATION.cff`).
+- `main_orientations.py` + `maier_3d.ipynb` stay in the repo root;
+  `Jeffrey_orbits.ipynb` and `abel_transform_raw_data.ipynb` are in `notebooks/`
+  (outputs stripped). Notebooks import no local modules.
+- `Jeffrey_orbits.ipynb` loads old-named pkls from relative `data/output_data_final/`;
+  `maier_3d.ipynb` loads from `data/output_data_hertz/` and the reference CSVs
+  from `data/`. Both pkl families ship in the Zenodo dataset
+  (DOI placeholders in `README.md`/`CITATION.cff`); the pkl key/shape
+  reference is `dataset_description.md`.
 
 ## Known bugs / traps
-- Fixed on `publication-prep` branch: `DataExporter.import_with_pickle()` `'wb'`
-  mode and the undefined `simulation_type`/`plotter` in the `-p` branch.
-  Verify the fix is merged before relying on `-p`.
+- Fixed and merged on `main`: `DataExporter.import_with_pickle()` `'wb'` mode,
+  the legacy pkl filename it searched for, and the undefined
+  `simulation_type`/`plotter` in the `-p` branch.
 
 ## Conventions
-- Git tracks code only: `.gitignore` excludes all data/artifacts
-  (`*.pkl *.csv *.png *.pdf *.svg *.npy *.zip *.tar.gz`) and `output_data_*` /
-  `inertial_dir_*` / `Alpha_*`. Never commit data outputs.
-- Exception: small reference CSVs (`thetax_ap_*.csv`, `r_talbot.csv`,
-  `s_talbot.csv`) are force-added — notebooks load them directly.
+- Git tracks code only: `.gitignore` excludes all data/artifacts by extension
+  (`*.pkl *.csv *.png *.pdf *.svg *.npy *.zip *.tar.gz`) plus a blanket `data/`
+  ignore. Never commit data outputs.
+- Exception: small reference CSVs (`data/thetax_ap_*.csv`, `data/r_talbot.csv`,
+  `data/s_talbot.csv`) are tracked — notebooks load them directly.
 - Plot variants use filename suffixes `_mono`, `_rods`.
 - Commits: short imperative summaries directly on `main` (no PR flow).
+- Legacy notebooks/scripts live on the `archive/legacy-main` branch.
 - Dataset/citation metadata: `CITATION.cff`, `.zenodo.json` (Zenodo–GitHub
   integration; placeholders `10.5281/zenodo.XXXXXXX` / `YYYYYYY` must be filled).

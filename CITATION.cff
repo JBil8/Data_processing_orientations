@@ -9,7 +9,7 @@ version: 1.0.0
 doi: 10.5281/zenodo.XXXXXXX
 date-released: "2026-10-02"
 license: GPL-3.0
-repository-code: "https://github.com/JBil8/Data_processin_orientations"
+repository-code: "https://github.com/JBil8/data_processing_orientations"
 abstract: >-
   Post-processing code for orientation statistics of non-spherical granular
   particles under simple shear from Liggghts DEM simulations:
