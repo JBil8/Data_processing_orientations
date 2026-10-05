@@ -27,6 +27,11 @@ diffusion, stress–orientation coupling, and related time-series statistics.
 ├── notebooks/
 │   ├── Jeffrey_orbits.ipynb         # Jeffrey-orbit comparison, ODF fits
 │   └── abel_transform_raw_data.ipynb
+├── simulation_runners/              # LIGGGHTS input scripts, SLURM runner, source patch
+│   ├── in.simple_shear_le_orientation
+│   ├── in.insertion
+│   ├── script_simple_shear_orientation.sh
+│   └── pair_gran_base_delta.patch
 ├── dataset_description.md           # structure of the processed pkl datasets
 └── data/                            # generated outputs + reference CSVs
 ```
@@ -80,6 +85,34 @@ The processed datasets used in the publication are available on Zenodo
 
 Legacy notebooks and exploratory scripts are preserved on the
 [`archive/legacy-main`](../../tree/archive/legacy-main) branch.
+
+## Simulations (LIGGGHTS)
+
+The raw simulation data are not distributed, but the tools to generate them
+are included in `simulation_runners/`:
+
+- `in.simple_shear_le_orientation` — LIGGGHTS input script for the simple
+  shear runs (superquadric ellipsoids, Lees–Edwards-style shearing,
+  pressure-controlled via `pressure_target`).
+- `in.insertion` — polydisperse particle insertion, `include`d by the input
+  script (path passed by the runner as the `insertion_script` variable).
+- `script_simple_shear_orientation.sh` — SLURM runner looping over
+  friction × aspect ratio × Inertial number. Edit the variables at the top
+  (`executable`, `run_root`, parameter arrays), then submit. It creates the
+  run directories `alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/` and runs
+  LIGGGHTS inside them, so the outputs can be post-processed directly with
+  `-d <run_root>`.
+- `pair_gran_base_delta.patch` — patch for the LIGGGHTS source
+  (`src/pair_gran_base.h`): it moves the assignment of the contact overlap
+  vector `sidata.delta` to *after* the `surfacesIntersect` calls, so the
+  contact model and the `pair/gran/local` compute see the correct overlap.
+  Apply it once in your LIGGGHTS checkout before compiling:
+
+  ```bash
+  cd LIGGGHTS-PUBLIC/src
+  git apply /path/to/pair_gran_base_delta.patch   # or: patch -p1 < ...
+  make -j
+  ```
 
 ## Citation
 

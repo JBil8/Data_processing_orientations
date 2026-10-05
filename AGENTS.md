@@ -36,6 +36,19 @@ No tests, no lint/CI — verification is running the script or notebook cells.
   (`from DataProcessor import …`); `DataProcessor.py` is the tiny base class
   of all `Processor*` modules — do not delete it.
 
+## Simulation runners
+- `simulation_runners/` holds the LIGGGHTS side: `in.simple_shear_le_orientation`
+  (expects `-v pressure_target`, `-v YoungMod`, etc.; includes `in.insertion`
+  via the runner-supplied `insertion_script` variable),
+  `script_simple_shear_orientation.sh` (SLURM runner; editable variables at
+  top: `executable`, `run_root`, parameter arrays; creates
+  `alpha_{ap}_cof_{cof}_pressure_{s}_I_{I}/` run dirs — the `-s` slot equals
+  `pressure_target` = 50) and `pair_gran_base_delta.patch` (LIGGGHTS source
+  patch relocating `sidata.delta` after `surfacesIntersect`). Local patched
+  LIGGGHTS: `~/opt/LIGGGHTS-PUBLIC/src/liggghts`.
+- Note: `aspectRatios` in the runner is commented out — set it before
+  submitting sweeps.
+
 ## Notebooks
 - `main_orientations.py` + `maier_3d.ipynb` stay in the repo root;
   `Jeffrey_orbits.ipynb` and `abel_transform_raw_data.ipynb` are in `notebooks/`
