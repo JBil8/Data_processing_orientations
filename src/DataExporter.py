@@ -13,7 +13,7 @@ class DataExporter:
         self.fraction = str(fraction)
         self.phi = str(phi)
         self.I = str(I)
-        self.directory = 'output_data_hertz/'
+        self.directory = 'data/output_data_hertz/'
         os.makedirs(self.directory, exist_ok=True)
 
     def export_orientation_data(self, data):    
