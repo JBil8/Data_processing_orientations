@@ -2,7 +2,11 @@ import numpy as np
 import argparse
 import matplotlib.pyplot as plt
 import os
+import sys
 import multiprocessing
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+
 from ProcessorVtk import ProcessorVtk
 from ProcessorDump import ProcessorDump
 from CombinedProcessor import CombinedProcessor

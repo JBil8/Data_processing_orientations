@@ -198,10 +198,7 @@ cython_debug/
 .cursorindexingignore
 
 # output data
-output_data_hertz/*
-inertial_dir_mup_0.0/
-Alpha_3.0_mu_0.0_viscous/
-Alpha_3.0_mu_0.4_viscous/
+data/
 *.zip
 *.pdf
 *.png
